@@ -15,8 +15,24 @@ from app.core.config_validator import ConfigValidator
 from app.core.normalizers import PolicyNormalizerEnhanced, NormalizedPolicyEnhanced
 from app.core.conflict_detector import PolicyInconsistencyEnhanced, InconsistencyType, SeverityLevel
 
-# Configure logging
+# Configure logging first
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Load .env file from current directory or parent directories
+    env_loaded = load_dotenv()
+    if env_loaded:
+        logger.debug("Successfully loaded .env file")
+    else:
+        logger.debug("No .env file found or already loaded")
+except ImportError:
+    # dotenv not installed, try to install it or continue without it
+    logger.warning("python-dotenv not installed. Install it with: pip install python-dotenv")
+    logger.warning("Continuing without .env file support")
+except Exception as e:
+    logger.warning(f"Error loading .env file: {e}")
 
 class PolicyAnalyzer(BaseAnalyzer):
     """Main analyzer for firewall policy analysis."""
@@ -28,7 +44,7 @@ class PolicyAnalyzer(BaseAnalyzer):
         Args:
             use_ai: Whether to use AI-powered analysis (default: True)
             openai_api_key: OpenAI API key (if None, will try to get from OPENAI_API_KEY env var)
-            openai_model: OpenAI model to use (if None, will try to get from OPENAI_MODEL env var, default: gpt-3.5-turbo)
+            openai_model: OpenAI model to use (if None, will try to get from OPENAI_MODEL env var, default: gpt-5)
         """
         logger.info("Initializing PolicyAnalyzer")
         self.embedder = PolicyEmbedder()
@@ -37,6 +53,11 @@ class PolicyAnalyzer(BaseAnalyzer):
         # Get API key from parameter or environment variable
         if openai_api_key is None:
             openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key:
+                logger.info(f"OpenAI API key found in environment: {openai_api_key[:10]}...{openai_api_key[-4:] if len(openai_api_key) > 14 else '***'}")
+            else:
+                logger.warning("OpenAI API key not found in environment variables")
+                logger.warning("Make sure OPENAI_API_KEY is set in .env file or environment")
         
         # Get model from parameter or environment variable, with default
         # Default to GPT-5 if specified, otherwise use gpt-4o (best available)
@@ -44,9 +65,17 @@ class PolicyAnalyzer(BaseAnalyzer):
             # Check environment variable first, default to gpt-5 if not set
             env_model = os.getenv("OPENAI_MODEL")
             if env_model:
+                logger.info(f"Found OPENAI_MODEL in environment: {env_model}")
                 openai_model = env_model
             else:
                 openai_model = "gpt-5"  # Use GPT-5, fallback handled in AI analyzer
+                logger.info(f"No OPENAI_MODEL in environment, defaulting to: {openai_model}")
+        
+        # Ensure we never default to gpt-3.5-turbo - if somehow it's set, use gpt-4o instead
+        if openai_model == "gpt-3.5-turbo":
+            logger.warning(f"gpt-3.5-turbo detected, upgrading to gpt-4o")
+            openai_model = "gpt-4o"
+        
         logger.info(f"Using OpenAI model: {openai_model}")
         
         # Initialize AI analyzer if enabled
@@ -1247,6 +1276,7 @@ class PolicyAnalyzer(BaseAnalyzer):
         total_comparisons = 0
         
         # Compare each policy against all other policies
+        # Report ALL contradictions - if Policy A contradicts with B, C, D, report all three
         for i, policy1 in enumerate(normalized_policies):
             for j, policy2 in enumerate(normalized_policies[i+1:], start=i+1):
                 total_comparisons += 1
@@ -1264,7 +1294,9 @@ class PolicyAnalyzer(BaseAnalyzer):
                         contradictions.append((policy1, policy2))
                         logger.debug(f"    Found contradiction: {policy1.policy_name} ({policy1.action}) vs {policy2.policy_name} ({policy2.action})")
         
-        # Create inconsistency reports for each contradiction
+        # Create inconsistency reports for EACH contradiction pair
+        # This ensures that if Policy A contradicts with B, C, D, we report:
+        # A vs B, A vs C, A vs D (and any other pairs like B vs C, etc.)
         for pol1, pol2 in contradictions:
             inconsistency = PolicyInconsistencyEnhanced(
                 inconsistency_id=f"CONT_{pol1.policy_id}_{pol2.policy_id}",
@@ -1321,48 +1353,61 @@ class PolicyAnalyzer(BaseAnalyzer):
             hash_map[h].append(policy)
         
         # Find groups with duplicates (more than one policy with same semantics)
-        duplicates = [(policies[0], policies[1:]) 
-                     for policies in hash_map.values() 
-                     if len(policies) > 1]
+        duplicate_groups = [policies 
+                           for policies in hash_map.values() 
+                           if len(policies) > 1]
         
-        # Create inconsistency report for each duplicate group
-        for orig, dups in duplicates:
-            dup_ids = [d.policy_id for d in dups]
-            dup_names = [d.policy_name for d in dups]
-            
+        # Create inconsistency report for EACH PAIR of duplicates
+        # This ensures that if Policy A is duplicated by B, C, D, we report:
+        # A vs B, A vs C, A vs D, B vs C, B vs D, C vs D
+        duplicate_pairs = []
+        for policies in duplicate_groups:
+            # Compare each policy against all others in the group
+            for i, policy1 in enumerate(policies):
+                for policy2 in policies[i+1:]:
+                    duplicate_pairs.append((policy1, policy2))
+                    logger.debug(f"    Found duplicate pair: {policy1.policy_name} (ID: {policy1.policy_id}) vs {policy2.policy_name} (ID: {policy2.policy_id})")
+        
+        # Create inconsistency report for each duplicate pair
+        for policy1, policy2 in duplicate_pairs:
             inconsistency = PolicyInconsistencyEnhanced(
-                inconsistency_id=f"DUP_{orig.policy_id}",
+                inconsistency_id=f"DUP_{policy1.policy_id}_{policy2.policy_id}",
                 type=InconsistencyType.DUPLICATE_POLICY,
                 severity=SeverityLevel.LOW,
-                description=f"Policy '{orig.policy_name}' (ID: {orig.policy_id}) is duplicated {len(dups)} times",
-                affected_fortinet_policies=[orig.policy_id] + dup_ids if config.vendor == 'fortinet' else [],
-                affected_zscaler_policies=[orig.policy_id] + dup_ids if config.vendor == 'zscaler' else [],
+                description=f"Policies '{policy1.policy_name}' (ID: {policy1.policy_id}) and '{policy2.policy_name}' (ID: {policy2.policy_id}) are duplicates with identical source, destination, and action",
+                affected_fortinet_policies=[policy1.policy_id, policy2.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy1.policy_id, policy2.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy1.source_users | policy2.source_users),
                 root_cause="Multiple policies with identical source, destination, and action",
                 business_impact="Unnecessary policy complexity, potential maintenance issues",
                 recommendation="Consolidate duplicate policies into a single rule",
                 remediation_steps=[
-                    f"Review duplicate policies: {orig.policy_name} and {', '.join(dup_names)}",
+                    f"Review duplicate policies: '{policy1.policy_name}' and '{policy2.policy_name}'",
                     "Identify which policy should be kept",
-                    "Remove duplicate policies",
+                    "Remove duplicate policy",
                     "Verify functionality after removal"
                 ],
                 confidence_score=0.90,
                 evidence={
-                    'original_policy': {
-                        'id': orig.policy_id,
-                        'name': orig.policy_name,
-                        'source_users': list(orig.source_users),
-                        'dest_resource': orig.dest_resource,
-                        'action': orig.action
+                    'policy1': {
+                        'id': policy1.policy_id,
+                        'name': policy1.policy_name,
+                        'source_users': list(policy1.source_users),
+                        'dest_resource': policy1.dest_resource,
+                        'action': policy1.action
                     },
-                    'duplicate_ids': dup_ids,
-                    'duplicate_names': dup_names
+                    'policy2': {
+                        'id': policy2.policy_id,
+                        'name': policy2.policy_name,
+                        'source_users': list(policy2.source_users),
+                        'dest_resource': policy2.dest_resource,
+                        'action': policy2.action
+                    }
                 }
             )
             inconsistencies.append(inconsistency)
-            logger.debug(f"    Found {len(dups)} duplicates of policy '{orig.policy_name}'")
         
-        logger.info(f"  ✓ Found {len(duplicates)} duplicate policy sets")
+        logger.info(f"  ✓ Found {len(duplicate_groups)} duplicate policy groups, {len(duplicate_pairs)} duplicate pairs")
     
     def _enhanced_check_3_overly_permissive_rules(self, normalized_policies: List[NormalizedPolicyEnhanced],
                                                   config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
@@ -1463,20 +1508,26 @@ class PolicyAnalyzer(BaseAnalyzer):
             # Check for conflicting actions (allow vs deny)
             actions = set(p.action for p in policies)
             if 'allow' in actions and 'deny' in actions:
-                # Check if policies target the same destination
-                destinations = set()
-                for p in policies:
-                    if p.applies_to_all_destinations:
-                        destinations.add('all')
-                    else:
-                        destinations.add(p.dest_resource)
-                
-                # If all policies target the same destination (including 'all'), it's a conflict
-                if len(destinations) == 1 and 'all' in destinations:
-                    # Compare each policy against all others for this group
-                    for i, policy1 in enumerate(policies):
-                        for policy2 in policies[i+1:]:
-                            if policy1.action != policy2.action:
+                # Compare each policy against all others for this group
+                # Report ALL conflicts - if Policy A conflicts with B, C, D, report all three
+                for i, policy1 in enumerate(policies):
+                    for policy2 in policies[i+1:]:
+                        if policy1.action != policy2.action:
+                            # Check if policies target the same destination (all or specific)
+                            same_destination = False
+                            
+                            if policy1.applies_to_all_destinations and policy2.applies_to_all_destinations:
+                                # Both target "all" - conflict
+                                same_destination = True
+                            elif not policy1.applies_to_all_destinations and not policy2.applies_to_all_destinations:
+                                # Both target specific destinations - check if same
+                                if policy1.dest_resource == policy2.dest_resource:
+                                    same_destination = True
+                            # If one targets "all" and other targets specific, they overlap - conflict
+                            elif policy1.applies_to_all_destinations or policy2.applies_to_all_destinations:
+                                same_destination = True
+                            
+                            if same_destination:
                                 issues.append((group, policy1, policy2))
                                 logger.debug(f"    Found conflict for group '{group}': {policy1.policy_name} ({policy1.action}) vs {policy2.policy_name} ({policy2.action})")
         

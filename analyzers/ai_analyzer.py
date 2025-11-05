@@ -8,8 +8,24 @@ from typing import Dict, Any, List, Optional
 from openai import OpenAI
 from models.base import FirewallConfig
 
-# Configure logging
+# Configure logging first
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Load .env file from current directory or parent directories
+    env_loaded = load_dotenv()
+    if env_loaded:
+        logger.debug("Successfully loaded .env file")
+    else:
+        logger.debug("No .env file found or already loaded")
+except ImportError:
+    # dotenv not installed, try to install it or continue without it
+    logger.warning("python-dotenv not installed. Install it with: pip install python-dotenv")
+    logger.warning("Continuing without .env file support")
+except Exception as e:
+    logger.warning(f"Error loading .env file: {e}")
 
 class AIInconsistencyAnalyzer:
     """AI-powered analyzer for detecting firewall policy inconsistencies using OpenAI GPT."""
@@ -24,14 +40,26 @@ class AIInconsistencyAnalyzer:
                    GPT-5 uses responses.create() API, other models use chat.completions.create()
         """
         logger.info("Initializing AI Inconsistency Analyzer")
-        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         
-        # Use GPT-5 if specified, otherwise use provided model
-        if model == "gpt-5":
-            self.model = "gpt-5"  # Use GPT-5 when available
-            logger.info("Using GPT-5 model for AI analysis")
+        # Load API key from environment or parameter
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if self.api_key:
+            logger.info(f"OpenAI API key found: {self.api_key[:10]}...{self.api_key[-4:] if len(self.api_key) > 14 else '***'}")
         else:
+            logger.warning("OpenAI API key not found in environment variables or parameter")
+            logger.warning("Make sure OPENAI_API_KEY is set in .env file or environment")
+        
+        # Set model - default to GPT-5, but allow override via parameter or env var
+        env_model = os.getenv("OPENAI_MODEL")
+        if env_model:
+            logger.info(f"Found OPENAI_MODEL in environment: {env_model}")
+            self.model = env_model
+        elif model:
             self.model = model
+        else:
+            self.model = "gpt-5"  # Default to GPT-5
+        
+        logger.info(f"Using OpenAI model: {self.model}")
         
         if not self.api_key:
             logger.warning("OpenAI API key not found. AI analysis will be disabled.")
