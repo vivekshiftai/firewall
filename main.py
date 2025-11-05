@@ -91,4 +91,19 @@ async def get_supported_vendors():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0")
+    import sys
+    
+    # Default port
+    port = 8000
+    
+    # Check if port is specified as command line argument
+    if "--port" in sys.argv:
+        try:
+            port_index = sys.argv.index("--port") + 1
+            if port_index < len(sys.argv):
+                port = int(sys.argv[port_index])
+        except (ValueError, IndexError):
+            print("Invalid port specified, using default port 8000")
+    
+    print(f"Starting server on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
