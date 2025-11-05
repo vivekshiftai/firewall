@@ -74,22 +74,14 @@ app.include_router(api_router)
 @app.on_event("startup")
 async def startup_event():
     """Event handler for application startup."""
-    import os
     logger.info("Application startup event triggered")
     logger.info("Cross-Firewall Policy Analysis Engine is starting up")
     logger.info("CORS configured to allow all origins")
-    
-    # Get the port from environment or default
-    port = os.getenv("PORT", "8000")
-    try:
-        port = int(port)
-    except ValueError:
-        port = 8000
-    
-    logger.info(f"FastAPI application ready")
-    logger.info(f"API Documentation (Swagger UI): http://0.0.0.0:{port}/docs")
-    logger.info(f"API Documentation (ReDoc): http://0.0.0.0:{port}/redoc")
-    logger.info(f"OpenAPI Schema: http://0.0.0.0:{port}/openapi.json")
+    logger.info("FastAPI application ready")
+    logger.info("API Documentation endpoints available:")
+    logger.info("  - Swagger UI: /docs")
+    logger.info("  - ReDoc: /redoc")
+    logger.info("  - OpenAPI Schema: /openapi.json")
     logger.info("Application startup completed successfully")
 
 @app.on_event("shutdown")
