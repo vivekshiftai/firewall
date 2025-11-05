@@ -14,16 +14,24 @@ logger = logging.getLogger(__name__)
 class AIInconsistencyAnalyzer:
     """AI-powered analyzer for detecting firewall policy inconsistencies using OpenAI GPT."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-3.5-turbo"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-5"):
         """
         Initialize the AI analyzer.
         
         Args:
             api_key: OpenAI API key (if None, will try to get from OPENAI_API_KEY env var)
-            model: OpenAI model to use (default: gpt-3.5-turbo, can use gpt-4o or gpt-4-turbo)
+            model: OpenAI model to use (default: gpt-5, can use gpt-4o, gpt-4-turbo, gpt-3.5-turbo)
+                   GPT-5 uses responses.create() API, other models use chat.completions.create()
         """
         logger.info("Initializing AI Inconsistency Analyzer")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        
+        # Use GPT-5 if specified, otherwise use provided model
+        if model == "gpt-5":
+            self.model = "gpt-5"  # Use GPT-5 when available
+            logger.info("Using GPT-5 model for AI analysis")
+        else:
+            self.model = model
         
         if not self.api_key:
             logger.warning("OpenAI API key not found. AI analysis will be disabled.")
@@ -31,9 +39,8 @@ class AIInconsistencyAnalyzer:
             self.client = None
         else:
             self.client = OpenAI(api_key=self.api_key)
-            logger.info(f"OpenAI client initialized with model: {model}")
+            logger.info(f"OpenAI client initialized with model: {self.model}")
         
-        self.model = model
         logger.info("AI Inconsistency Analyzer initialized successfully")
     
     def analyze_with_ai(self, config: FirewallConfig) -> Dict[str, Any]:
@@ -70,25 +77,64 @@ class AIInconsistencyAnalyzer:
             prompt = self._create_analysis_prompt(config, policies_text)
             
             # Call OpenAI API
-            logger.debug("Sending request to OpenAI API")
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt()
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3,  # Lower temperature for more consistent analysis
-                response_format={"type": "json_object"}  # Request JSON response
-            )
+            logger.debug(f"Sending request to OpenAI API using {self.model}")
             
-            # Parse AI response
-            ai_response = json.loads(response.choices[0].message.content)
+            # Use GPT-5 API structure if using GPT-5, otherwise use chat completions API
+            if self.model == "gpt-5":
+                try:
+                    # GPT-5 uses responses.create() with different structure
+                    logger.info("Using GPT-5 API (responses.create)")
+                    combined_prompt = f"{self._get_system_prompt()}\n\n{prompt}"
+                    
+                    response = self.client.responses.create(
+                        model="gpt-5",
+                        input=combined_prompt,
+                        reasoning={"effort": "high"},  # High effort for detailed analysis
+                        text={"verbosity": "high"}  # High verbosity for comprehensive responses
+                    )
+                    
+                    # GPT-5 returns output_text directly
+                    response_text = response.output_text
+                    ai_response = json.loads(response_text)
+                    
+                except Exception as model_error:
+                    # If GPT-5 API is not available, fallback to gpt-4o with chat completions
+                    logger.warning(f"GPT-5 API not available ({str(model_error)}), falling back to gpt-4o")
+                    self.model = "gpt-4o"
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": self._get_system_prompt()
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.3,
+                        response_format={"type": "json_object"}
+                    )
+                    ai_response = json.loads(response.choices[0].message.content)
+            else:
+                # Use standard chat completions API for other models
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_system_prompt()
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
+                )
+                ai_response = json.loads(response.choices[0].message.content)
             logger.info("AI analysis completed successfully")
             
             # Convert AI findings to inconsistency format
@@ -315,4 +361,322 @@ Return your analysis in the JSON format specified in the system prompt."""
                 "total_findings": len(all_findings)
             }
         }
+    
+    def analyze_inconsistencies(self, inconsistencies: List[Dict[str, Any]], vendor: str = "fortinet") -> Dict[str, Any]:
+        """
+        Analyze inconsistent policies found by rule-based checks using AI.
+        Sends inconsistencies to AI for detailed analysis by type, severity, reason, and solution.
+        
+        Args:
+            inconsistencies: List of inconsistency dictionaries (from enhanced checks)
+            vendor: Vendor name (fortinet or zscaler)
+            
+        Returns:
+            AI analysis results with structured analysis for each inconsistency
+        """
+        if not self.client:
+            logger.warning("OpenAI client not available. Skipping AI inconsistency analysis.")
+            return {
+                "ai_analysis": {
+                    "enabled": False,
+                    "message": "OpenAI API key not configured"
+                }
+            }
+        
+        if not inconsistencies:
+            logger.info("No inconsistencies to analyze with AI")
+            return {
+                "ai_analysis": {
+                    "enabled": True,
+                    "message": "No inconsistencies found to analyze",
+                    "analyzed_count": 0
+                }
+            }
+        
+        logger.info(f"Analyzing {len(inconsistencies)} inconsistencies with AI (model: {self.model})")
+        
+        try:
+            # Format inconsistencies for AI analysis
+            inconsistencies_text = self._format_inconsistencies_for_ai(inconsistencies, vendor)
+            
+            # Create prompt for AI analysis
+            prompt = self._create_inconsistency_analysis_prompt(inconsistencies_text, vendor, len(inconsistencies))
+            
+            # Call OpenAI API
+            logger.debug(f"Sending {len(inconsistencies)} inconsistencies to OpenAI API for analysis using {self.model}")
+            
+            # Use GPT-5 API structure if using GPT-5, otherwise use chat completions API
+            if self.model == "gpt-5":
+                try:
+                    # GPT-5 uses responses.create() with different structure
+                    logger.info("Using GPT-5 API (responses.create)")
+                    combined_prompt = f"{self._get_inconsistency_system_prompt()}\n\n{prompt}"
+                    
+                    response = self.client.responses.create(
+                        model="gpt-5",
+                        input=combined_prompt,
+                        reasoning={"effort": "high"},  # High effort for detailed analysis
+                        text={"verbosity": "high"}  # High verbosity for comprehensive responses
+                    )
+                    
+                    # GPT-5 returns output_text directly
+                    response_text = response.output_text
+                    ai_response = json.loads(response_text)
+                    
+                except Exception as model_error:
+                    # If GPT-5 API is not available, fallback to gpt-4o with chat completions
+                    logger.warning(f"GPT-5 API not available ({str(model_error)}), falling back to gpt-4o")
+                    self.model = "gpt-4o"
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": self._get_inconsistency_system_prompt()
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.2,
+                        response_format={"type": "json_object"}
+                    )
+                    ai_response = json.loads(response.choices[0].message.content)
+            else:
+                # Use standard chat completions API for other models
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_inconsistency_system_prompt()
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.2,
+                    response_format={"type": "json_object"}
+                )
+                ai_response = json.loads(response.choices[0].message.content)
+            logger.info(f"AI analysis completed successfully. Analyzed {len(ai_response.get('analyzed_inconsistencies', []))} inconsistencies")
+            
+            return {
+                "ai_analysis": {
+                    "enabled": True,
+                    "model": self.model,
+                    "analyzed_count": len(ai_response.get('analyzed_inconsistencies', [])),
+                    "analyzed_inconsistencies": ai_response.get('analyzed_inconsistencies', []),
+                    "summary": ai_response.get("summary", ""),
+                    "overall_assessment": ai_response.get("overall_assessment", {}),
+                    "priority_recommendations": ai_response.get("priority_recommendations", [])
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error during AI inconsistency analysis: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
+            return {
+                "ai_analysis": {
+                    "enabled": True,
+                    "error": str(e),
+                    "message": "AI inconsistency analysis failed"
+                }
+            }
+    
+    def _format_inconsistencies_for_ai(self, inconsistencies: List[Dict[str, Any]], vendor: str) -> str:
+        """
+        Format inconsistencies into a readable text format for AI analysis.
+        
+        Args:
+            inconsistencies: List of inconsistency dictionaries
+            vendor: Vendor name
+            
+        Returns:
+            Formatted string of inconsistencies
+        """
+        formatted = []
+        for idx, inconsistency in enumerate(inconsistencies, 1):
+            inc_text = f"\n=== Inconsistency {idx} ===\n"
+            inc_text += f"Inconsistency ID: {inconsistency.get('inconsistency_id', f'INC_{idx}')}\n"
+            inc_text += f"Type: {inconsistency.get('type', 'Unknown')}\n"
+            inc_text += f"Severity: {inconsistency.get('severity', 'MEDIUM')}\n"
+            inc_text += f"Description: {inconsistency.get('description', 'N/A')}\n"
+            
+            # Affected policies
+            if vendor == 'fortinet':
+                affected_policies = inconsistency.get('affected_fortinet_policies', [])
+                if affected_policies:
+                    inc_text += f"Affected Fortinet Policies: {', '.join(str(p) for p in affected_policies)}\n"
+            elif vendor == 'zscaler':
+                affected_policies = inconsistency.get('affected_zscaler_policies', [])
+                if affected_policies:
+                    inc_text += f"Affected Zscaler Policies: {', '.join(str(p) for p in affected_policies)}\n"
+            
+            # Affected user groups
+            affected_groups = inconsistency.get('affected_user_groups', [])
+            if affected_groups:
+                inc_text += f"Affected User Groups: {', '.join(str(g) for g in affected_groups)}\n"
+            
+            # Root cause
+            root_cause = inconsistency.get('root_cause', '')
+            if root_cause:
+                inc_text += f"Root Cause: {root_cause}\n"
+            
+            # Business impact
+            business_impact = inconsistency.get('business_impact', '')
+            if business_impact:
+                inc_text += f"Business Impact: {business_impact}\n"
+            
+            # Current recommendation
+            recommendation = inconsistency.get('recommendation', '')
+            if recommendation:
+                inc_text += f"Current Recommendation: {recommendation}\n"
+            
+            # Remediation steps
+            remediation_steps = inconsistency.get('remediation_steps', [])
+            if remediation_steps:
+                inc_text += f"Remediation Steps: {len(remediation_steps)} steps provided\n"
+                for step_idx, step in enumerate(remediation_steps, 1):
+                    inc_text += f"  {step_idx}. {step}\n"
+            
+            # Evidence
+            evidence = inconsistency.get('evidence', {})
+            if evidence:
+                inc_text += f"Evidence: {json.dumps(evidence, indent=2)}\n"
+            
+            # Confidence score
+            confidence = inconsistency.get('confidence_score', 0.0)
+            inc_text += f"Confidence Score: {confidence:.2f}\n"
+            
+            formatted.append(inc_text)
+        
+        return "\n".join(formatted)
+    
+    def _get_inconsistency_system_prompt(self) -> str:
+        """Get the system prompt for AI inconsistency analysis."""
+        return """You are an expert firewall policy analyst with 20+ years of experience in network security, firewall management, and security policy analysis. Your expertise covers Fortinet FortiGate, Zscaler, and other major firewall platforms.
+
+Your task is to analyze firewall policy inconsistencies that have been detected by automated rule-based checks. For each inconsistency, you need to provide:
+
+1. **Detailed Type Analysis**: Classify the inconsistency type more precisely
+2. **Severity Assessment**: Assess the severity level (CRITICAL, HIGH, MEDIUM, LOW) with justification
+3. **Root Cause Analysis**: Provide deep technical analysis of WHY this inconsistency occurred
+4. **Solution Strategy**: Provide detailed, actionable steps on HOW to resolve this issue
+
+Return your analysis as a JSON object with this EXACT structure:
+{
+  "summary": "Brief overall summary of all inconsistencies analyzed",
+  "analyzed_inconsistencies": [
+    {
+      "inconsistency_id": "original inconsistency ID",
+      "type": {
+        "category": "Contradictory Rules|Duplicate Policies|Security Gaps|Configuration Issues|Compliance Issues",
+        "detailed_type": "More specific type description",
+        "explanation": "Why this type classification is accurate"
+      },
+      "severity": {
+        "level": "CRITICAL|HIGH|MEDIUM|LOW",
+        "justification": "Detailed explanation of why this severity level is appropriate",
+        "risk_score": 0.0-1.0,
+        "factors": ["Factor 1", "Factor 2", "Factor 3"]
+      },
+      "root_cause": {
+        "primary_cause": "Main technical reason why this inconsistency exists",
+        "contributing_factors": ["Factor 1", "Factor 2"],
+        "technical_details": "Deep technical explanation",
+        "common_patterns": "Is this a common mistake? What patterns indicate this?"
+      },
+      "solution": {
+        "immediate_actions": [
+          "Step 1: Immediate action to take",
+          "Step 2: Next immediate action"
+        ],
+        "detailed_steps": [
+          "Step 1: Detailed resolution step",
+          "Step 2: Next step with specific commands/config changes",
+          "Step 3: Verification step"
+        ],
+        "verification": "How to verify the fix is working",
+        "prevention": "How to prevent this issue in the future",
+        "estimated_complexity": "LOW|MEDIUM|HIGH",
+        "estimated_time": "Time estimate to fix"
+      },
+      "priority": {
+        "priority_level": 1-10,
+        "urgency": "IMMEDIATE|HIGH|MEDIUM|LOW",
+        "reason": "Why this priority level"
+      }
+    }
+  ],
+  "overall_assessment": {
+    "total_critical": 0,
+    "total_high": 0,
+    "total_medium": 0,
+    "total_low": 0,
+    "overall_risk": "CRITICAL|HIGH|MEDIUM|LOW",
+    "overall_risk_score": 0.0-1.0,
+    "key_concerns": ["Concern 1", "Concern 2"]
+  },
+  "priority_recommendations": [
+    {
+      "priority": 1,
+      "recommendation": "Most critical recommendation",
+      "reason": "Why this is the top priority"
+    }
+  ]
+}
+
+IMPORTANT:
+- Be thorough and technical in your analysis
+- Provide actionable, specific solutions
+- Consider real-world firewall management scenarios
+- Include specific commands or configuration examples where applicable
+- Assess business and security impact
+- Provide verification steps for each solution"""
+    
+    def _create_inconsistency_analysis_prompt(self, inconsistencies_text: str, vendor: str, count: int) -> str:
+        """
+        Create the analysis prompt for AI inconsistency analysis.
+        
+        Args:
+            inconsistencies_text: Formatted inconsistencies text
+            vendor: Vendor name
+            count: Number of inconsistencies
+            
+        Returns:
+            Complete prompt string
+        """
+        prompt = f"""Analyze the following {count} firewall policy inconsistencies detected in a {vendor.upper()} firewall configuration.
+
+These inconsistencies were detected by automated rule-based analysis. Your task is to provide deep technical analysis for each one, including:
+
+1. **Type Analysis**: More detailed classification of the inconsistency type
+2. **Severity Assessment**: Assess the severity with detailed justification
+3. **Root Cause Analysis**: Deep technical analysis of WHY this occurred
+4. **Solution Strategy**: Detailed, actionable steps on HOW to resolve it
+
+For each inconsistency, provide:
+- Detailed type classification and explanation
+- Severity assessment with justification
+- Root cause analysis (technical details)
+- Step-by-step solution with verification
+- Priority ranking
+
+Inconsistencies to Analyze:
+{inconsistencies_text}
+
+Please analyze each inconsistency thoroughly and provide structured analysis as specified in the system prompt. Focus on:
+- Technical accuracy
+- Actionable solutions
+- Real-world firewall management scenarios
+- Security and business impact
+- Verification methods
+
+Return your analysis in the JSON format specified in the system prompt."""
+        
+        return prompt
 

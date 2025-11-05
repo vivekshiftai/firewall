@@ -39,8 +39,9 @@ class PolicyAnalyzer(BaseAnalyzer):
             openai_api_key = os.getenv("OPENAI_API_KEY")
         
         # Get model from parameter or environment variable, with default
+        # Default to GPT-5 if specified, otherwise use gpt-4o (best available)
         if openai_model is None:
-            openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+            openai_model = os.getenv("OPENAI_MODEL", "gpt-5")  # Use GPT-5, fallback handled in AI analyzer
         
         # Initialize AI analyzer if enabled
         self.use_ai = use_ai
@@ -149,7 +150,7 @@ class PolicyAnalyzer(BaseAnalyzer):
                 security_issues = self._check_missing_security_coverage(config)
                 logger.info(f"[8/8] Found {len(security_issues)} missing security coverage issues")
             
-            # AI-powered analysis
+            # AI-powered analysis on inconsistencies
             ai_results = {}
             logger.info(f"AI analysis check: use_ai={self.use_ai}, ai_analyzer exists={self.ai_analyzer is not None}")
             
@@ -159,9 +160,37 @@ class PolicyAnalyzer(BaseAnalyzer):
                 has_valid_client = self.ai_analyzer.client is not None
                 logger.info(f"AI analyzer client status: {has_valid_client}")
             
-            if self.use_ai and self.ai_analyzer and has_valid_client:
+            # If using enhanced analyzer and have inconsistencies, send them to AI for detailed analysis
+            if self.use_ai and self.ai_analyzer and has_valid_client and use_enhanced and all_inconsistencies:
                 try:
-                    logger.info("Running AI-powered analysis")
+                    logger.info(f"Running AI-powered analysis on {len(all_inconsistencies)} inconsistencies using GPT-5")
+                    logger.info("Sending inconsistencies to AI for detailed type, severity, root cause, and solution analysis")
+                    
+                    # Convert inconsistencies to dict format for AI analysis
+                    inconsistencies_for_ai = all_inconsistencies  # Already in dict format from enhanced checks
+                    
+                    # Send inconsistencies to AI for detailed analysis
+                    ai_results = self.ai_analyzer.analyze_inconsistencies(inconsistencies_for_ai, config.vendor)
+                    logger.info("AI inconsistency analysis completed successfully")
+                    
+                    if ai_results.get("ai_analysis", {}).get("enabled"):
+                        analyzed_count = ai_results["ai_analysis"].get("analyzed_count", 0)
+                        logger.info(f"AI analyzed {analyzed_count} inconsistencies with detailed analysis")
+                except Exception as e:
+                    logger.error(f"AI inconsistency analysis failed: {str(e)}. Continuing with rule-based results only.")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    ai_results = {
+                        "ai_analysis": {
+                            "enabled": False,
+                            "error": str(e),
+                            "message": "AI inconsistency analysis failed"
+                        }
+                    }
+            elif self.use_ai and self.ai_analyzer and has_valid_client:
+                # Fallback to original AI analysis if not using enhanced checks
+                try:
+                    logger.info("Running AI-powered analysis on policies")
                     ai_results = self.ai_analyzer.analyze_with_ai(config)
                     logger.info("AI analysis completed successfully")
                 except Exception as e:
@@ -182,6 +211,10 @@ class PolicyAnalyzer(BaseAnalyzer):
                     reasons.append("ai_analyzer=None")
                 elif not has_valid_client:
                     reasons.append("client not available (API key missing)")
+                elif not use_enhanced:
+                    reasons.append("using original analysis (AI analysis on inconsistencies requires enhanced analysis)")
+                elif not all_inconsistencies:
+                    reasons.append("no inconsistencies found to analyze")
                 
                 logger.warning(f"AI analysis skipped: {', '.join(reasons)}")
                 ai_results = {
