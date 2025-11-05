@@ -83,25 +83,60 @@ class FortinetParser(BaseParser):
             logger.error(f"Error parsing Fortinet configuration: {str(e)}")
             raise ParserError(f"Error parsing Fortinet configuration: {str(e)}")
 
+    def _is_policy(self, policy_data: Dict[str, Any]) -> bool:
+        """
+        Check if the data looks like a firewall policy.
+        
+        Args:
+            policy_data: Raw policy data to check
+            
+        Returns:
+            True if it looks like a policy, False otherwise
+        """
+        # Check for required policy fields (either exact or with variations)
+        has_srcintf = "srcintf" in policy_data or "source_interface" in policy_data or "source-interface" in policy_data
+        has_dstintf = "dstintf" in policy_data or "destination_interface" in policy_data or "destination-interface" in policy_data
+        has_srcaddr = "srcaddr" in policy_data or "source_address" in policy_data or "source-address" in policy_data
+        has_dstaddr = "dstaddr" in policy_data or "destination_address" in policy_data or "destination-address" in policy_data
+        has_action = "action" in policy_data
+        has_service = "service" in policy_data or "services" in policy_data
+        
+        # A valid policy should have at least source/destination interfaces or addresses, and an action
+        return (has_srcintf or has_srcaddr) and (has_dstintf or has_dstaddr) and has_action
+    
     def _parse_policies(self, policies_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Parse Fortinet policies into standardized format.
         
         Args:
-            policies_data: Raw policy data
+            policies_data: Raw policy data (may contain non-policy objects)
             
         Returns:
             List of standardized policies
         """
-        logger.debug(f"Parsing {len(policies_data)} Fortinet policies")
+        logger.debug(f"Parsing {len(policies_data)} Fortinet policy items")
         policies = []
+        skipped = 0
+        
         for i, policy_data in enumerate(policies_data):
             try:
+                # Skip if it doesn't look like a policy
+                if not self._is_policy(policy_data):
+                    logger.debug(f"Skipping item {i+1} - does not appear to be a firewall policy")
+                    skipped += 1
+                    continue
+                
                 logger.debug(f"Parsing policy {i+1}")
-                fortinet_policy = FortinetPolicy(**policy_data)
+                
+                # Map field variations to expected format
+                mapped_data = self._map_policy_fields(policy_data)
+                
+                # Try to create FortinetPolicy object
+                fortinet_policy = FortinetPolicy(**mapped_data)
+                
                 # Convert to standardized format
                 standardized_policy = {
-                    "id": fortinet_policy.id,
+                    "id": str(fortinet_policy.id),
                     "name": fortinet_policy.name,
                     "source_zones": fortinet_policy.srcintf,
                     "destination_zones": fortinet_policy.dstintf,
@@ -110,18 +145,116 @@ class FortinetParser(BaseParser):
                     "services": fortinet_policy.service,
                     "action": fortinet_policy.action,
                     "enabled": fortinet_policy.status == "enable",
-                    "logging": "log" in fortinet_policy and fortinet_policy.log != "disable",
-                    "schedule": getattr(fortinet_policy, "schedule", "always"),
+                    "logging": getattr(fortinet_policy, "log", "disable") != "disable",
+                    "schedule": fortinet_policy.schedule,
                     "comments": getattr(fortinet_policy, "comments", "")
                 }
                 policies.append(standardized_policy)
                 logger.debug(f"Policy {i+1} parsed successfully")
             except Exception as e:
                 logger.warning(f"Error parsing policy {i+1}: {str(e)}")
-                # Continue with other policies
+                skipped += 1
                 continue
-        logger.info(f"Successfully parsed {len(policies)} out of {len(policies_data)} policies")
+        
+        logger.info(f"Successfully parsed {len(policies)} out of {len(policies_data)} items ({skipped} skipped)")
         return policies
+    
+    def _map_policy_fields(self, policy_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Map policy fields from various formats to standard FortinetPolicy format.
+        
+        Args:
+            policy_data: Raw policy data with potentially different field names
+            
+        Returns:
+            Mapped policy data in FortinetPolicy format
+        """
+        mapped = {}
+        
+        # Map ID field
+        policy_id = None
+        if "id" in policy_data:
+            policy_id = int(policy_data["id"]) if isinstance(policy_data["id"], (int, str)) else policy_data["id"]
+        elif "policy_id" in policy_data:
+            policy_id = int(policy_data["policy_id"]) if isinstance(policy_data["policy_id"], (int, str)) else policy_data["policy_id"]
+        
+        if policy_id is None:
+            policy_id = 0  # Default ID if not found
+        
+        mapped["id"] = policy_id
+        
+        # Map name field
+        mapped["name"] = policy_data.get("name", policy_data.get("policy_name", f"policy-{policy_id}"))
+        
+        # Map interfaces (handle Fortinet quoted string format)
+        srcintf_value = policy_data.get("srcintf") or policy_data.get("source_interface") or policy_data.get("source-interface") or []
+        mapped["srcintf"] = self._to_list(srcintf_value)
+        
+        dstintf_value = policy_data.get("dstintf") or policy_data.get("destination_interface") or policy_data.get("destination-interface") or []
+        mapped["dstintf"] = self._to_list(dstintf_value)
+        
+        # Map addresses
+        srcaddr_value = policy_data.get("srcaddr") or policy_data.get("source_address") or policy_data.get("source-address") or []
+        mapped["srcaddr"] = self._to_list(srcaddr_value)
+        
+        dstaddr_value = policy_data.get("dstaddr") or policy_data.get("destination_address") or policy_data.get("destination-address") or []
+        mapped["dstaddr"] = self._to_list(dstaddr_value)
+        
+        # Map services
+        service_value = policy_data.get("service") or policy_data.get("services") or []
+        mapped["service"] = self._to_list(service_value)
+        
+        # Map action
+        mapped["action"] = policy_data.get("action", "deny")
+        
+        # Map status (default to "enable" if not present, as Fortinet policies are enabled by default)
+        mapped["status"] = policy_data.get("status") or policy_data.get("enabled") or "enable"
+        
+        # Map schedule
+        mapped["schedule"] = policy_data.get("schedule", "always")
+        
+        return mapped
+    
+    def _to_list(self, value: Any) -> List[str]:
+        """
+        Convert value to list if it's not already a list.
+        Handles Fortinet's quoted string format like "port1\" \"port3".
+        
+        Args:
+            value: Value to convert (can be string, list, or None)
+            
+        Returns:
+            List representation
+        """
+        if isinstance(value, list):
+            return [str(v) for v in value]
+        elif isinstance(value, str):
+            # Handle Fortinet's quoted string format: "port1\" \"port3"
+            # Split by escaped quotes and spaces
+            if '\\" \\"' in value or '" "' in value:
+                # Remove outer quotes and split by escaped quotes
+                cleaned = value.strip('"').replace('\\"', '"')
+                # Split by space-quote-space pattern or just space if it's a simple list
+                if '\\" \\"' in value:
+                    parts = [part.strip('"') for part in value.split('\\" \\"')]
+                else:
+                    parts = [part.strip().strip('"') for part in cleaned.split(' ') if part.strip()]
+                return [p for p in parts if p]
+            # Handle comma-separated values
+            elif ',' in value:
+                return [v.strip() for v in value.split(',') if v.strip()]
+            # Regular space-separated values
+            elif ' ' in value:
+                return [v.strip() for v in value.split(' ') if v.strip()]
+            # Single value
+            elif value:
+                return [value]
+            else:
+                return []
+        elif value:
+            return [str(value)]
+        else:
+            return []
 
     def _parse_address_objects(self, addresses_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
