@@ -12,6 +12,14 @@ from models.base import FirewallConfig
 # Configure logging first
 logger = logging.getLogger(__name__)
 
+# Try to import tiktoken for token counting
+try:
+    import tiktoken
+    TIKTOKEN_AVAILABLE = True
+except ImportError:
+    TIKTOKEN_AVAILABLE = False
+    logger.warning("tiktoken not available. Install with: pip install tiktoken. Token counting will be estimated.")
+
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
@@ -71,6 +79,115 @@ class AIInconsistencyAnalyzer:
             logger.info(f"OpenAI client initialized with model: {self.model}")
         
         logger.info("AI Inconsistency Analyzer initialized successfully")
+        
+        # Initialize token counting
+        self._token_encoder = None
+        if TIKTOKEN_AVAILABLE:
+            try:
+                # Use cl100k_base encoding (used by GPT-4, GPT-3.5, and GPT-5)
+                self._token_encoder = tiktoken.get_encoding("cl100k_base")
+                logger.info("Token counting enabled (tiktoken)")
+            except Exception as e:
+                logger.warning(f"Failed to initialize token encoder: {e}")
+                self._token_encoder = None
+    
+    def _count_tokens(self, text: str) -> int:
+        """
+        Count tokens in text.
+        
+        Args:
+            text: Text to count tokens for
+            
+        Returns:
+            Number of tokens
+        """
+        if self._token_encoder:
+            try:
+                return len(self._token_encoder.encode(text))
+            except Exception as e:
+                logger.debug(f"Error counting tokens: {e}")
+                # Fallback to estimation
+                return self._estimate_tokens(text)
+        else:
+            return self._estimate_tokens(text)
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Estimate token count (rough approximation: ~4 characters per token).
+        
+        Args:
+            text: Text to estimate tokens for
+            
+        Returns:
+            Estimated number of tokens
+        """
+        return len(text) // 4
+    
+    def _log_token_usage(self, prompt: str, response: Any = None, operation_name: str = "API call"):
+        """
+        Log token usage for API calls.
+        
+        Args:
+            prompt: Input prompt/messages
+            response: API response (if available, to count output tokens)
+            operation_name: Name of operation for logging
+        """
+        # Count input tokens
+        if isinstance(prompt, str):
+            input_tokens = self._count_tokens(prompt)
+        elif isinstance(prompt, list):
+            # Handle messages format
+            prompt_text = "\n".join([msg.get("content", "") for msg in prompt if isinstance(msg, dict)])
+            input_tokens = self._count_tokens(prompt_text)
+        else:
+            input_tokens = self._count_tokens(str(prompt))
+        
+        # Count output tokens from response if available
+        output_tokens = 0
+        total_tokens = input_tokens
+        
+        if response:
+            try:
+                # Try to get token usage from response
+                if hasattr(response, 'usage'):
+                    usage = response.usage
+                    if hasattr(usage, 'prompt_tokens'):
+                        input_tokens = usage.prompt_tokens
+                    if hasattr(usage, 'completion_tokens'):
+                        output_tokens = usage.completion_tokens
+                    if hasattr(usage, 'total_tokens'):
+                        total_tokens = usage.total_tokens
+                elif hasattr(response, 'output_text'):
+                    # For GPT-5 responses.create() API
+                    output_tokens = self._count_tokens(response.output_text)
+                    total_tokens = input_tokens + output_tokens
+                elif hasattr(response, 'choices') and len(response.choices) > 0:
+                    # For chat completions API
+                    if hasattr(response, 'usage'):
+                        usage = response.usage
+                        if hasattr(usage, 'prompt_tokens'):
+                            input_tokens = usage.prompt_tokens
+                        if hasattr(usage, 'completion_tokens'):
+                            output_tokens = usage.completion_tokens
+                        if hasattr(usage, 'total_tokens'):
+                            total_tokens = usage.total_tokens
+                    else:
+                        # Estimate from response content
+                        response_text = response.choices[0].message.content if hasattr(response.choices[0].message, 'content') else ""
+                        output_tokens = self._count_tokens(response_text)
+                        total_tokens = input_tokens + output_tokens
+            except Exception as e:
+                logger.debug(f"Error extracting token usage from response: {e}")
+        
+        # Log token usage
+        logger.info(f"Token usage for {operation_name}:")
+        logger.info(f"  Input tokens: {input_tokens:,}")
+        if output_tokens > 0:
+            logger.info(f"  Output tokens: {output_tokens:,}")
+        logger.info(f"  Total tokens: {total_tokens:,}")
+        if self.model == "gpt-5":
+            remaining_context = 128000 - total_tokens
+            logger.info(f"  Remaining context (128k limit): {remaining_context:,} tokens ({remaining_context/128000*100:.1f}% available)")
     
     def _retry_with_timeout(self, func: Callable, max_retries: int = 3, timeout_seconds: int = 180, 
                            retry_delay: int = 60, operation_name: str = "API call") -> Any:
@@ -187,6 +304,10 @@ class AIInconsistencyAnalyzer:
                             text={"verbosity": "high"}  # High verbosity for comprehensive responses
                         )
                     
+                    # Log token usage before sending
+                    logger.info(f"Counting tokens for GPT-5 analyze_with_ai request...")
+                    self._log_token_usage(combined_prompt, None, "GPT-5 responses.create() (analyze_with_ai) (input)")
+                    
                     response = self._retry_with_timeout(
                         call_gpt5_responses_analyze,
                         max_retries=3,
@@ -194,6 +315,9 @@ class AIInconsistencyAnalyzer:
                         retry_delay=180,  # Wait 3 minutes before retry
                         operation_name="GPT-5 responses.create() (analyze_with_ai)"
                     )
+                    
+                    # Log token usage after receiving response
+                    self._log_token_usage(combined_prompt, response, "GPT-5 responses.create() (analyze_with_ai)")
                     
                     # GPT-5 returns output_text directly
                     response_text = response.output_text
@@ -223,6 +347,22 @@ class AIInconsistencyAnalyzer:
                                 response_format={"type": "json_object"}
                             )
                         
+                        # Prepare messages for token counting
+                        messages_analyze = [
+                            {
+                                "role": "system",
+                                "content": self._get_system_prompt()
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ]
+                        
+                        # Log token usage before sending
+                        logger.info(f"Counting tokens for GPT-5 chat completions (analyze_with_ai) request...")
+                        self._log_token_usage(messages_analyze, None, "GPT-5 chat completions (analyze_with_ai) (input)")
+                        
                         response = self._retry_with_timeout(
                             call_gpt5_chat_analyze,
                             max_retries=3,
@@ -230,6 +370,10 @@ class AIInconsistencyAnalyzer:
                             retry_delay=180,  # Wait 3 minutes before retry
                             operation_name="GPT-5 chat completions (analyze_with_ai)"
                         )
+                        
+                        # Log token usage after receiving response
+                        self._log_token_usage(messages_analyze, response, "GPT-5 chat completions (analyze_with_ai)")
+                        
                         ai_response = json.loads(response.choices[0].message.content)
                         logger.info("Successfully used GPT-5 with chat completions API")
                     except Exception as gpt5_chat_error:
@@ -255,6 +399,22 @@ class AIInconsistencyAnalyzer:
                                 response_format={"type": "json_object"}
                             )
                         
+                        # Prepare messages for token counting
+                        messages_fallback_analyze = [
+                            {
+                                "role": "system",
+                                "content": self._get_system_prompt()
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ]
+                        
+                        # Log token usage before sending
+                        logger.info(f"Counting tokens for GPT-4o fallback (analyze_with_ai) request...")
+                        self._log_token_usage(messages_fallback_analyze, None, "GPT-4o fallback (analyze_with_ai) (input)")
+                        
                         response = self._retry_with_timeout(
                             call_gpt4o_fallback,
                             max_retries=3,
@@ -262,6 +422,10 @@ class AIInconsistencyAnalyzer:
                             retry_delay=180,  # Wait 3 minutes before retry
                             operation_name="GPT-4o fallback (analyze_with_ai)"
                         )
+                        
+                        # Log token usage after receiving response
+                        self._log_token_usage(messages_fallback_analyze, response, "GPT-4o fallback (analyze_with_ai)")
+                        
                         ai_response = json.loads(response.choices[0].message.content)
             else:
                 # Use standard chat completions API for other models
@@ -282,6 +446,22 @@ class AIInconsistencyAnalyzer:
                         response_format={"type": "json_object"}
                     )
                 
+                # Prepare messages for token counting
+                messages_analyze_other = [
+                    {
+                        "role": "system",
+                        "content": self._get_system_prompt()
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+                
+                # Log token usage before sending
+                logger.info(f"Counting tokens for {self.model} chat completions (analyze_with_ai) request...")
+                self._log_token_usage(messages_analyze_other, None, f"Chat completions ({self.model}) (analyze_with_ai) (input)")
+                
                 response = self._retry_with_timeout(
                     call_chat_completions_analyze,
                     max_retries=3,
@@ -289,6 +469,10 @@ class AIInconsistencyAnalyzer:
                     retry_delay=180,  # Wait 3 minutes before retry
                     operation_name=f"Chat completions ({self.model}) (analyze_with_ai)"
                 )
+                
+                # Log token usage after receiving response
+                self._log_token_usage(messages_analyze_other, response, f"Chat completions ({self.model}) (analyze_with_ai)")
+                
                 ai_response = json.loads(response.choices[0].message.content)
             logger.info("AI analysis completed successfully")
             
@@ -697,6 +881,10 @@ Return your analysis in the JSON format specified in the system prompt."""
                             text={"verbosity": "high"}  # High verbosity for comprehensive responses
                         )
                     
+                    # Log token usage before sending
+                    logger.info(f"Counting tokens for GPT-5 request...")
+                    self._log_token_usage(combined_prompt, None, "GPT-5 responses.create() (input)")
+                    
                     response = self._retry_with_timeout(
                         call_gpt5_responses,
                         max_retries=3,
@@ -704,6 +892,9 @@ Return your analysis in the JSON format specified in the system prompt."""
                         retry_delay=180,  # Wait 3 minutes before retry
                         operation_name="GPT-5 responses.create()"
                     )
+                    
+                    # Log token usage after receiving response
+                    self._log_token_usage(combined_prompt, response, "GPT-5 responses.create()")
                     
                     # GPT-5 returns output_text directly
                     response_text = response.output_text
@@ -743,6 +934,22 @@ Return your analysis in the JSON format specified in the system prompt."""
                                 response_format={"type": "json_object"}
                             )
                         
+                        # Prepare messages for token counting
+                        messages = [
+                            {
+                                "role": "system",
+                                "content": self._get_inconsistency_system_prompt()
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ]
+                        
+                        # Log token usage before sending
+                        logger.info(f"Counting tokens for GPT-5 chat completions request...")
+                        self._log_token_usage(messages, None, "GPT-5 chat completions (input)")
+                        
                         response = self._retry_with_timeout(
                             call_gpt5_chat,
                             max_retries=3,
@@ -750,6 +957,10 @@ Return your analysis in the JSON format specified in the system prompt."""
                             retry_delay=180,  # Wait 3 minutes before retry
                             operation_name="GPT-5 chat completions"
                         )
+                        
+                        # Log token usage after receiving response
+                        self._log_token_usage(messages, response, "GPT-5 chat completions")
+                        
                         ai_response = json.loads(response.choices[0].message.content)
                         logger.info("Successfully used GPT-5 with chat completions API")
                     except Exception as gpt5_chat_error:
@@ -775,6 +986,22 @@ Return your analysis in the JSON format specified in the system prompt."""
                                     response_format={"type": "json_object"}
                                 )
                             
+                            # Prepare messages for token counting
+                            messages_fallback_inconsistencies = [
+                                {
+                                    "role": "system",
+                                    "content": self._get_inconsistency_system_prompt()
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ]
+                            
+                            # Log token usage before sending
+                            logger.info(f"Counting tokens for GPT-4o fallback (analyze_inconsistencies) request...")
+                            self._log_token_usage(messages_fallback_inconsistencies, None, "GPT-4o fallback (analyze_inconsistencies) (input)")
+                            
                             response = self._retry_with_timeout(
                                 call_gpt4o_fallback_inconsistencies,
                                 max_retries=3,
@@ -782,6 +1009,10 @@ Return your analysis in the JSON format specified in the system prompt."""
                                 retry_delay=180,  # Wait 3 minutes before retry
                                 operation_name="GPT-4o fallback (analyze_inconsistencies)"
                             )
+                            
+                            # Log token usage after receiving response
+                            self._log_token_usage(messages_fallback_inconsistencies, response, "GPT-4o fallback (analyze_inconsistencies)")
+                            
                             ai_response = json.loads(response.choices[0].message.content)
                         except Exception as fallback_error:
                             error_str_fallback = str(fallback_error)
@@ -812,6 +1043,22 @@ Return your analysis in the JSON format specified in the system prompt."""
                             response_format={"type": "json_object"}
                         )
                     
+                    # Prepare messages for token counting
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": self._get_inconsistency_system_prompt()
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ]
+                    
+                    # Log token usage before sending
+                    logger.info(f"Counting tokens for {self.model} chat completions request...")
+                    self._log_token_usage(messages, None, f"Chat completions ({self.model}) (input)")
+                    
                     response = self._retry_with_timeout(
                         call_chat_completions,
                         max_retries=3,
@@ -819,6 +1066,10 @@ Return your analysis in the JSON format specified in the system prompt."""
                         retry_delay=180,  # Wait 3 minutes before retry
                         operation_name=f"Chat completions ({self.model})"
                     )
+                    
+                    # Log token usage after receiving response
+                    self._log_token_usage(messages, response, f"Chat completions ({self.model})")
+                    
                     ai_response = json.loads(response.choices[0].message.content)
                 except Exception as api_error:
                     error_str = str(api_error)
