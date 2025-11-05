@@ -1,12 +1,15 @@
 """
 Database utilities for storing analysis results.
 """
+import logging
 import sqlite3
 import json
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import os
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class AnalysisDatabase:
     """SQLite database for storing firewall analysis results."""
@@ -14,56 +17,67 @@ class AnalysisDatabase:
     def __init__(self, db_path: str = "analysis_results.db"):
         """Initialize the database."""
         self.db_path = db_path
+        logger.info(f"Initializing AnalysisDatabase with path: {db_path}")
         self.init_database()
+        logger.info("AnalysisDatabase initialized successfully")
 
     def init_database(self):
         """Initialize the database schema."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Create analysis results table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS analysis_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                analysis_id TEXT UNIQUE NOT NULL,
-                firewall_id TEXT,
-                vendor TEXT,
-                analysis_type TEXT NOT NULL,
-                results TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Create comparison results table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS comparison_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                comparison_id TEXT UNIQUE NOT NULL,
-                firewall_a_id TEXT NOT NULL,
-                firewall_b_id TEXT NOT NULL,
-                vendor_a TEXT NOT NULL,
-                vendor_b TEXT NOT NULL,
-                results TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        # Create compliance results table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS compliance_results (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                compliance_id TEXT UNIQUE NOT NULL,
-                firewall_id TEXT NOT NULL,
-                vendor TEXT NOT NULL,
-                standards TEXT NOT NULL,
-                results TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        
-        conn.commit()
-        conn.close()
+        logger.info("Initializing database schema")
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Create analysis results table
+            logger.debug("Creating analysis_results table")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS analysis_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis_id TEXT UNIQUE NOT NULL,
+                    firewall_id TEXT,
+                    vendor TEXT,
+                    analysis_type TEXT NOT NULL,
+                    results TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create comparison results table
+            logger.debug("Creating comparison_results table")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS comparison_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    comparison_id TEXT UNIQUE NOT NULL,
+                    firewall_a_id TEXT NOT NULL,
+                    firewall_b_id TEXT NOT NULL,
+                    vendor_a TEXT NOT NULL,
+                    vendor_b TEXT NOT NULL,
+                    results TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create compliance results table
+            logger.debug("Creating compliance_results table")
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS compliance_results (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    compliance_id TEXT UNIQUE NOT NULL,
+                    firewall_id TEXT NOT NULL,
+                    vendor TEXT NOT NULL,
+                    standards TEXT NOT NULL,
+                    results TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            conn.commit()
+            conn.close()
+            logger.info("Database schema initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing database schema: {str(e)}")
+            raise
 
     def save_analysis_result(self, analysis_id: str, firewall_id: str, vendor: str, 
                            analysis_type: str, results: Dict[str, Any]) -> bool:
@@ -80,6 +94,7 @@ class AnalysisDatabase:
         Returns:
             True if successful, False otherwise
         """
+        logger.info(f"Saving analysis result ID: {analysis_id} for firewall: {firewall_id}")
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -98,9 +113,10 @@ class AnalysisDatabase:
             
             conn.commit()
             conn.close()
+            logger.info(f"Analysis result saved successfully for ID: {analysis_id}")
             return True
         except Exception as e:
-            print(f"Error saving analysis result: {str(e)}")
+            logger.error(f"Error saving analysis result: {str(e)}")
             return False
 
     def save_comparison_result(self, comparison_id: str, firewall_a_id: str, firewall_b_id: str,

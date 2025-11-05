@@ -1,7 +1,6 @@
 """
-Zscaler cloud security configuration parser.
+Zscaler firewall configuration parser.
 """
-import json
 import logging
 from typing import Dict, Any, List
 from parsers.base import BaseParser
@@ -9,11 +8,11 @@ from models.base import FirewallConfig
 from models.zscaler import ZscalerRule, ZscalerLocation, ZscalerUserGroup
 from exceptions.custom_exceptions import ParserError
 
+# Configure logging
 logger = logging.getLogger(__name__)
 
-
 class ZscalerParser(BaseParser):
-    """Parser for Zscaler cloud security platform configurations."""
+    """Parser for Zscaler firewall configurations."""
 
     def parse(self, config_data: Dict[str, Any]) -> FirewallConfig:
         """
@@ -25,119 +24,134 @@ class ZscalerParser(BaseParser):
         Returns:
             Standardized FirewallConfig object
         """
+        logger.info("Starting Zscaler configuration parsing")
         try:
             # Extract basic information
-            firewall_id = config_data.get("cloud", "zscaler")
+            logger.debug("Extracting basic firewall information")
+            firewall_id = config_data.get("id", "zscaler-firewall")
+            version = config_data.get("version", "unknown")
+            logger.info(f"Parsing Zscaler firewall ID: {firewall_id}, Version: {version}")
             
             # Parse rules
+            logger.debug("Parsing rules")
             rules = self._parse_rules(config_data.get("rules", []))
+            logger.info(f"Parsed {len(rules)} rules")
             
-            # Parse objects
+            # Parse locations
+            logger.debug("Parsing locations")
             locations = self._parse_locations(config_data.get("locations", []))
+            logger.info(f"Parsed {len(locations)} locations")
+            
+            # Parse user groups
+            logger.debug("Parsing user groups")
             user_groups = self._parse_user_groups(config_data.get("user_groups", []))
-            departments = self._parse_departments(config_data.get("departments", []))
-            app_groups = self._parse_application_groups(config_data.get("application_groups", []))
+            logger.info(f"Parsed {len(user_groups)} user groups")
             
-            # Combine all objects
-            objects = locations + user_groups + departments + app_groups
-            
-            return FirewallConfig(
+            # Create standardized config
+            logger.debug("Creating standardized firewall configuration")
+            firewall_config = FirewallConfig(
                 id=firewall_id,
                 vendor="zscaler",
-                version=config_data.get("version", ""),
+                version=version,
                 policies=rules,
-                objects=objects,
-                metadata={
-                    "config_type": "zscaler_cloud",
-                    "parsed_at": __import__('datetime').datetime.utcnow().isoformat()
-                }
+                objects=locations + user_groups,
+                metadata=config_data.get("metadata", {})
             )
+            
+            logger.info("Zscaler configuration parsing completed successfully")
+            return firewall_config
+            
         except Exception as e:
             logger.error(f"Error parsing Zscaler configuration: {str(e)}")
-            raise ParserError(f"Failed to parse Zscaler configuration: {str(e)}", "zscaler")
+            raise ParserError(f"Error parsing Zscaler configuration: {str(e)}")
 
-    def _parse_rules(self, rule_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Parse Zscaler rule data."""
+    def _parse_rules(self, rules_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Parse Zscaler rules into standardized format.
+        
+        Args:
+            rules_data: Raw rule data
+            
+        Returns:
+            List of standardized rules
+        """
+        logger.debug(f"Parsing {len(rules_data)} Zscaler rules")
         rules = []
-        try:
-            for rule in rule_data:
-                zscaler_rule = ZscalerRule(
-                    id=rule.get("id", ""),
-                    name=rule.get("name", f"Rule-{rule.get('id', '')}"),
-                    locations=rule.get("locations", []),
-                    departments=rule.get("departments", []),
-                    users=rule.get("users", []),
-                    applications=rule.get("applications", []),
-                    action=rule.get("action", "BLOCK"),
-                    enabled=rule.get("enabled", True)
-                )
-                rules.append(zscaler_rule.dict())
-        except Exception as e:
-            logger.warning(f"Error parsing rules: {str(e)}")
+        for i, rule_data in enumerate(rules_data):
+            try:
+                logger.debug(f"Parsing rule {i+1}")
+                zscaler_rule = ZscalerRule(**rule_data)
+                # Convert to standardized format
+                standardized_rule = {
+                    "id": zscaler_rule.id,
+                    "name": zscaler_rule.name,
+                    "source_zones": [],  # Zscaler doesn't have zones in the same way
+                    "destination_zones": [],
+                    "source_addresses": getattr(zscaler_rule, "source_ips", []),
+                    "destination_addresses": getattr(zscaler_rule, "dest_ips", []),
+                    "services": getattr(zscaler_rule, "applications", []),
+                    "action": zscaler_rule.action,
+                    "enabled": getattr(zscaler_rule, "enabled", True),
+                    "logging": getattr(zscaler_rule, "audit", False),
+                    "schedule": getattr(zscaler_rule, "time_windows", "always"),
+                    "comments": getattr(zscaler_rule, "description", "")
+                }
+                rules.append(standardized_rule)
+                logger.debug(f"Rule {i+1} parsed successfully")
+            except Exception as e:
+                logger.warning(f"Error parsing rule {i+1}: {str(e)}")
+                # Continue with other rules
+                continue
+        logger.info(f"Successfully parsed {len(rules)} out of {len(rules_data)} rules")
         return rules
 
-    def _parse_locations(self, location_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Parse Zscaler location data."""
+    def _parse_locations(self, locations_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Parse Zscaler locations.
+        
+        Args:
+            locations_data: Raw location data
+            
+        Returns:
+            List of location objects
+        """
+        logger.debug(f"Parsing {len(locations_data)} Zscaler locations")
         locations = []
-        try:
-            for location in location_data:
-                zscaler_location = ZscalerLocation(
-                    id=location.get("id", ""),
-                    name=location.get("name", ""),
-                    ip_addresses=location.get("ipAddresses", []),
-                    vpn_credentials=location.get("vpnCredentials", [])
-                )
-                locations.append(zscaler_location.dict())
-        except Exception as e:
-            logger.warning(f"Error parsing locations: {str(e)}")
+        for i, location_data in enumerate(locations_data):
+            try:
+                logger.debug(f"Parsing location {i+1}")
+                location_obj = ZscalerLocation(**location_data)
+                locations.append(location_obj.dict())
+                logger.debug(f"Location {i+1} parsed successfully")
+            except Exception as e:
+                logger.warning(f"Error parsing location {i+1}: {str(e)}")
+                continue
+        logger.info(f"Successfully parsed {len(locations)} out of {len(locations_data)} locations")
         return locations
 
-    def _parse_user_groups(self, group_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Parse Zscaler user group data."""
-        groups = []
-        try:
-            for group in group_data:
-                zscaler_group = ZscalerUserGroup(
-                    id=group.get("id", ""),
-                    name=group.get("name", ""),
-                    users=group.get("users", [])
-                )
-                groups.append(zscaler_group.dict())
-        except Exception as e:
-            logger.warning(f"Error parsing user groups: {str(e)}")
-        return groups
-
-    def _parse_departments(self, dept_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Parse Zscaler department data."""
-        depts = []
-        try:
-            for dept in dept_data:
-                # Implementation would depend on actual Zscaler API structure
-                dept_obj = {
-                    "id": dept.get("id", ""),
-                    "name": dept.get("name", ""),
-                    "type": "department"
-                }
-                depts.append(dept_obj)
-        except Exception as e:
-            logger.warning(f"Error parsing departments: {str(e)}")
-        return depts
-
-    def _parse_application_groups(self, app_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Parse Zscaler application group data."""
-        apps = []
-        try:
-            for app in app_data:
-                # Implementation would depend on actual Zscaler API structure
-                app_obj = {
-                    "id": app.get("id", ""),
-                    "name": app.get("name", ""),
-                    "type": "application_group"
-                }
-                apps.append(app_obj)
-        except Exception as e:
-            logger.warning(f"Error parsing application groups: {str(e)}")
-        return apps
+    def _parse_user_groups(self, user_groups_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Parse Zscaler user groups.
+        
+        Args:
+            user_groups_data: Raw user group data
+            
+        Returns:
+            List of user group objects
+        """
+        logger.debug(f"Parsing {len(user_groups_data)} Zscaler user groups")
+        user_groups = []
+        for i, group_data in enumerate(user_groups_data):
+            try:
+                logger.debug(f"Parsing user group {i+1}")
+                group_obj = ZscalerUserGroup(**group_data)
+                user_groups.append(group_obj.dict())
+                logger.debug(f"User group {i+1} parsed successfully")
+            except Exception as e:
+                logger.warning(f"Error parsing user group {i+1}: {str(e)}")
+                continue
+        logger.info(f"Successfully parsed {len(user_groups)} out of {len(user_groups_data)} user groups")
+        return user_groups
 
     def validate_config(self, config: FirewallConfig) -> bool:
         """
@@ -149,10 +163,32 @@ class ZscalerParser(BaseParser):
         Returns:
             True if valid, False otherwise
         """
-        if not config.id or not config.vendor:
-            return False
-        
-        if config.vendor != "zscaler":
-            return False
+        logger.info("Validating Zscaler configuration")
+        try:
+            # Check if required fields are present
+            if not config.id:
+                logger.error("Firewall ID is missing")
+                return False
             
-        return True
+            if not config.vendor or config.vendor != "zscaler":
+                logger.error("Invalid vendor for Zscaler parser")
+                return False
+            
+            # Check policies
+            logger.debug("Validating policies")
+            for i, policy in enumerate(config.policies):
+                if not isinstance(policy, dict):
+                    logger.error(f"Policy {i+1} is not a dictionary")
+                    return False
+                # Check required fields
+                required_fields = ["id", "action"]
+                for field in required_fields:
+                    if field not in policy:
+                        logger.error(f"Required field '{field}' missing in policy {i+1}")
+                        return False
+            
+            logger.info("Zscaler configuration validation completed successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error validating Zscaler configuration: {str(e)}")
+            return False

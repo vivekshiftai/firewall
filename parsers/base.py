@@ -1,10 +1,13 @@
 """
 Base parser for firewall configurations.
 """
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 from models.base import FirewallConfig
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class BaseParser(ABC):
     """Abstract base class for firewall configuration parsers."""

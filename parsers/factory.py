@@ -1,16 +1,20 @@
 """
-Parser factory for creating vendor-specific parsers.
+Factory for creating firewall parser instances.
 """
+import logging
 from typing import Dict, Type
 from parsers.base import BaseParser
 from parsers.fortinet_parser import FortinetParser
 from parsers.zscaler_parser import ZscalerParser
 from parsers.cisco_parser import CiscoParser
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class ParserFactory:
-    """Factory for creating firewall configuration parsers."""
+    """Factory class for creating parser instances."""
     
+    # Registry of available parsers
     _parsers: Dict[str, Type[BaseParser]] = {
         "fortinet": FortinetParser,
         "zscaler": ZscalerParser,
@@ -18,42 +22,49 @@ class ParserFactory:
     }
     
     @classmethod
-    def register_parser(cls, vendor: str, parser_class: Type[BaseParser]) -> None:
+    def register_parser(cls, vendor: str, parser_class: Type[BaseParser]):
         """
         Register a new parser for a vendor.
         
         Args:
             vendor: The vendor name
-            parser_class: The parser class to register
+            parser_class: The parser class
         """
-        cls._parsers[vendor.lower()] = parser_class
+        logger.info(f"Registering parser for vendor: {vendor}")
+        cls._parsers[vendor] = parser_class
+        logger.debug(f"Parser registered successfully for vendor: {vendor}")
     
     @classmethod
     def create_parser(cls, vendor: str) -> BaseParser:
         """
-        Create a parser for the specified vendor.
+        Create a parser instance for a specific vendor.
         
         Args:
             vendor: The vendor name
             
         Returns:
-            An instance of the appropriate parser
+            Parser instance
             
         Raises:
-            ValueError: If no parser is registered for the vendor
+            ValueError: If vendor is not supported
         """
-        vendor_lower = vendor.lower()
-        if vendor_lower not in cls._parsers:
-            raise ValueError(f"No parser registered for vendor: {vendor}")
+        logger.info(f"Creating parser for vendor: {vendor}")
+        if vendor not in cls._parsers:
+            logger.error(f"Unsupported vendor: {vendor}")
+            raise ValueError(f"Unsupported vendor: {vendor}")
         
-        return cls._parsers[vendor_lower]()
+        parser = cls._parsers[vendor]()
+        logger.info(f"Parser created successfully for vendor: {vendor}")
+        return parser
     
     @classmethod
     def get_supported_vendors(cls) -> list:
         """
-        Get a list of supported vendors.
+        Get list of supported vendors.
         
         Returns:
             List of supported vendor names
         """
-        return list(cls._parsers.keys())
+        vendors = list(cls._parsers.keys())
+        logger.debug(f"Supported vendors: {vendors}")
+        return vendors

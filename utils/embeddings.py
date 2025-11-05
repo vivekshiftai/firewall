@@ -1,18 +1,22 @@
 """
 Embedding utilities for semantic policy analysis.
 """
+import logging
 import numpy as np
 from typing import List, Dict, Any
 from app.vendors.abstract import NormalizedPolicy
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class PolicyEmbedder:
     """Utility class for creating embeddings of firewall policies."""
     
     def __init__(self):
         """Initialize the policy embedder."""
+        logger.info("Initializing PolicyEmbedder")
         self.vectorizer = TfidfVectorizer(
             max_features=1000,
             stop_words=None,
@@ -20,6 +24,8 @@ class PolicyEmbedder:
             token_pattern=r'\b[a-zA-Z0-9_/*\-:.]+\b'
         )
         self.is_fitted = False
+        logger.debug("PolicyEmbedder components initialized")
+        logger.info("PolicyEmbedder initialized successfully")
 
     def create_policy_text_representation(self, policy: NormalizedPolicy) -> str:
         """
@@ -31,43 +37,49 @@ class PolicyEmbedder:
         Returns:
             Text representation of the policy
         """
-        # Create a comprehensive text representation that captures the policy's semantics
-        components = []
-        
-        # Add policy name and comments
-        if policy.name:
-            components.append(f"name:{policy.name}")
-        if policy.comments:
-            components.append(f"comments:{policy.comments}")
+        logger.debug(f"Creating text representation for policy ID: {policy.id}")
+        try:
+            # Create a comprehensive text representation that captures the policy's semantics
+            components = []
             
-        # Add source information
-        if policy.source_zones:
-            components.append(f"source_zones:{'|'.join(policy.source_zones)}")
-        if policy.source_addresses:
-            components.append(f"source_addresses:{'|'.join(policy.source_addresses)}")
+            # Add policy name and comments
+            if policy.name:
+                components.append(f"name:{policy.name}")
+            if policy.comments:
+                components.append(f"comments:{policy.comments}")
+                
+            # Add source information
+            if policy.source_zones:
+                components.append(f"source_zones:{'|'.join(policy.source_zones)}")
+            if policy.source_addresses:
+                components.append(f"source_addresses:{'|'.join(policy.source_addresses)}")
+                
+            # Add destination information
+            if policy.destination_zones:
+                components.append(f"destination_zones:{'|'.join(policy.destination_zones)}")
+            if policy.destination_addresses:
+                components.append(f"destination_addresses:{'|'.join(policy.destination_addresses)}")
+                
+            # Add services
+            if policy.services:
+                components.append(f"services:{'|'.join(policy.services)}")
+                
+            # Add action
+            components.append(f"action:{policy.action}")
             
-        # Add destination information
-        if policy.destination_zones:
-            components.append(f"destination_zones:{'|'.join(policy.destination_zones)}")
-        if policy.destination_addresses:
-            components.append(f"destination_addresses:{'|'.join(policy.destination_addresses)}")
-            
-        # Add services
-        if policy.services:
-            components.append(f"services:{'|'.join(policy.services)}")
-            
-        # Add action
-        components.append(f"action:{policy.action}")
-        
-        # Add other attributes
-        if policy.enabled:
-            components.append("enabled")
-        if policy.logging:
-            components.append("logging")
-        if policy.schedule and policy.schedule != "always":
-            components.append(f"schedule:{policy.schedule}")
-            
-        return " ".join(components)
+            # Add other attributes
+            if policy.enabled:
+                components.append("enabled")
+            if policy.logging:
+                components.append("logging")
+            if policy.schedule and policy.schedule != "always":
+                components.append(f"schedule:{policy.schedule}")
+                
+            logger.debug(f"Text representation created for policy ID: {policy.id}")
+            return " ".join(components)
+        except Exception as e:
+            logger.error(f"Error creating text representation for policy ID {policy.id}: {str(e)}")
+            raise
 
     def create_policy_embeddings(self, policies: List[NormalizedPolicy]) -> np.ndarray:
         """
