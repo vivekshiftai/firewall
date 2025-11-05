@@ -2,7 +2,7 @@
 Fortinet firewall configuration parser.
 """
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 from parsers.base import BaseParser
 from models.base import FirewallConfig
 from models.fortinet import FortinetPolicy, FortinetAddressObject, FortinetServiceObject
@@ -14,18 +14,30 @@ logger = logging.getLogger(__name__)
 class FortinetParser(BaseParser):
     """Parser for Fortinet firewall configurations."""
 
-    def parse(self, config_data: Dict[str, Any]) -> FirewallConfig:
+    def parse(self, config_data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> FirewallConfig:
         """
         Parse Fortinet configuration data into a standardized FirewallConfig.
         
         Args:
-            config_data: Raw Fortinet configuration data
+            config_data: Raw Fortinet configuration data (can be dict or list)
             
         Returns:
             Standardized FirewallConfig object
         """
         logger.info("Starting Fortinet configuration parsing")
         try:
+            # Handle case where config_data is a list (array of policies)
+            if isinstance(config_data, list):
+                logger.info(f"Received list of {len(config_data)} items, treating as policies")
+                config_data = {
+                    "id": "fortinet-firewall",
+                    "version": "unknown",
+                    "policies": config_data,
+                    "addresses": [],
+                    "services": [],
+                    "metadata": {}
+                }
+            
             # Extract basic information
             logger.debug("Extracting basic firewall information")
             firewall_id = config_data.get("id", "fortinet-firewall")
@@ -34,7 +46,13 @@ class FortinetParser(BaseParser):
             
             # Parse policies
             logger.debug("Parsing policies")
-            policies = self._parse_policies(config_data.get("policies", []))
+            policies_data = config_data.get("policies", [])
+            # If policies is a list, use it directly; otherwise try to extract it
+            if isinstance(policies_data, list):
+                policies = self._parse_policies(policies_data)
+            else:
+                logger.warning("Policies data is not a list, attempting to convert")
+                policies = self._parse_policies([policies_data] if policies_data else [])
             logger.info(f"Parsed {len(policies)} policies")
             
             # Parse address objects
