@@ -46,12 +46,17 @@ class AIInconsistencyAnalyzer:
         Returns:
             AI analysis results including inconsistencies found
         """
+        logger.info(f"analyze_with_ai called: client exists={self.client is not None}, api_key exists={self.api_key is not None}")
+        
         if not self.client:
             logger.warning("OpenAI client not available. Skipping AI analysis.")
+            logger.warning(f"API key status: api_key={self.api_key is not None}")
             return {
                 "ai_analysis": {
                     "enabled": False,
-                    "message": "OpenAI API key not configured"
+                    "message": "OpenAI API key not configured",
+                    "api_key_available": self.api_key is not None,
+                    "client_available": False
                 }
             }
         

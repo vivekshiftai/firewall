@@ -21,16 +21,32 @@ logger.info("Initializing application components")
 openai_api_key = os.getenv("OPENAI_API_KEY")
 openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # Default to gpt-3.5-turbo
 
+logger.info(f"Checking for OpenAI API key: {'FOUND' if openai_api_key else 'NOT FOUND'}")
 if openai_api_key:
-    logger.info("OpenAI API key found in environment variable")
+    logger.info(f"OpenAI API key found in environment variable (length: {len(openai_api_key)} chars)")
+    logger.info(f"Using OpenAI model: {openai_model}")
 else:
-    logger.warning("OPENAI_API_KEY not found in environment. AI analysis will be disabled.")
+    logger.warning("=" * 80)
+    logger.warning("OPENAI_API_KEY not found in environment. AI analysis will be DISABLED.")
+    logger.warning("To enable AI analysis, set the OPENAI_API_KEY environment variable:")
+    logger.warning("  export OPENAI_API_KEY='your-api-key-here'")
+    logger.warning("=" * 80)
 
 analyzer = PolicyAnalyzer(
     use_ai=True,
     openai_api_key=openai_api_key,
     openai_model=openai_model
 )
+
+# Log AI analyzer status
+if hasattr(analyzer, 'ai_analyzer') and analyzer.ai_analyzer:
+    if hasattr(analyzer.ai_analyzer, 'client') and analyzer.ai_analyzer.client:
+        logger.info("✓ AI analyzer is READY and will be used for analysis")
+    else:
+        logger.warning("✗ AI analyzer exists but OpenAI client is NOT available")
+else:
+    logger.warning("✗ AI analyzer is NOT available - AI analysis will be skipped")
+
 logger.info("Application components initialized successfully")
 
 @router.post("/analyze-firewall")

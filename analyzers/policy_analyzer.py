@@ -39,24 +39,34 @@ class PolicyAnalyzer(BaseAnalyzer):
         
         # Initialize AI analyzer if enabled
         self.use_ai = use_ai
+        logger.info(f"Initializing AI analyzer: use_ai={use_ai}, api_key_provided={openai_api_key is not None}")
         if self.use_ai:
             try:
+                logger.debug(f"Creating AIInconsistencyAnalyzer with model: {openai_model}")
                 self.ai_analyzer = AIInconsistencyAnalyzer(
                     api_key=openai_api_key,
                     model=openai_model
                 )
                 if openai_api_key:
                     logger.info(f"AI analyzer initialized successfully with model: {openai_model}")
+                    if hasattr(self.ai_analyzer, 'client') and self.ai_analyzer.client:
+                        logger.info("OpenAI client is ready for AI analysis")
+                    else:
+                        logger.warning("OpenAI client is not available. AI analysis will be disabled.")
+                        self.use_ai = False
                 else:
                     logger.warning("AI analyzer initialized but API key not found. AI analysis will be disabled.")
                     self.use_ai = False
             except Exception as e:
-                logger.warning(f"Failed to initialize AI analyzer: {str(e)}. Continuing without AI.")
+                logger.error(f"Failed to initialize AI analyzer: {str(e)}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                logger.warning("Continuing without AI analysis.")
                 self.use_ai = False
                 self.ai_analyzer = None
         else:
             self.ai_analyzer = None
-            logger.info("AI analysis disabled")
+            logger.info("AI analysis disabled (use_ai=False)")
         
         logger.debug("PolicyAnalyzer components initialized")
         logger.info("PolicyAnalyzer initialized successfully")
@@ -87,13 +97,16 @@ class PolicyAnalyzer(BaseAnalyzer):
             
             # AI-powered analysis
             ai_results = {}
+            logger.info(f"AI analysis check: use_ai={self.use_ai}, ai_analyzer exists={self.ai_analyzer is not None}")
             if self.use_ai and self.ai_analyzer:
                 try:
-                    logger.debug("Running AI-powered analysis")
+                    logger.info("Running AI-powered analysis")
                     ai_results = self.ai_analyzer.analyze_with_ai(config)
-                    logger.info("AI analysis completed")
+                    logger.info("AI analysis completed successfully")
                 except Exception as e:
                     logger.error(f"AI analysis failed: {str(e)}. Continuing with rule-based results only.")
+                    import traceback
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     ai_results = {
                         "ai_analysis": {
                             "enabled": False,
@@ -101,11 +114,14 @@ class PolicyAnalyzer(BaseAnalyzer):
                         }
                     }
             else:
-                logger.debug("AI analysis skipped (not enabled or not available)")
+                if not self.use_ai:
+                    logger.warning("AI analysis is disabled (use_ai=False)")
+                if not self.ai_analyzer:
+                    logger.warning("AI analyzer is not available (ai_analyzer is None)")
                 ai_results = {
                     "ai_analysis": {
                         "enabled": False,
-                        "message": "AI analysis not enabled"
+                        "message": f"AI analysis not available (use_ai={self.use_ai}, ai_analyzer={self.ai_analyzer is not None})"
                     }
                 }
             
