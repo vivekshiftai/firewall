@@ -3,7 +3,7 @@ Base analyzer for firewall policy analysis.
 """
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-from app.models.base import FirewallConfig, PolicyComparisonResult
+from models.base import FirewallConfig, PolicyComparisonResult
 
 
 class BaseAnalyzer(ABC):

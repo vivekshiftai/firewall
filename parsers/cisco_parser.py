@@ -3,9 +3,9 @@ Cisco ASA configuration parser.
 """
 import logging
 from typing import Dict, Any, List
-from app.parsers.base import BaseParser
-from app.models.base import FirewallConfig
-from app.exceptions.custom_exceptions import ParserError
+from parsers.base import BaseParser
+from models.base import FirewallConfig
+from exceptions.custom_exceptions import ParserError
 
 logger = logging.getLogger(__name__)
 

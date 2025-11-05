@@ -3,9 +3,9 @@ Policy analyzer for firewall configurations.
 """
 import logging
 from typing import List, Dict, Any
-from app.analyzers.base import BaseAnalyzer
-from app.models.base import FirewallConfig, PolicyComparisonResult
-from app.exceptions.custom_exceptions import AnalyzerError
+from analyzers.base import BaseAnalyzer
+from models.base import FirewallConfig, PolicyComparisonResult
+from exceptions.custom_exceptions import AnalyzerError
 
 logger = logging.getLogger(__name__)
 

@@ -2,10 +2,10 @@
 Parser factory for creating vendor-specific parsers.
 """
 from typing import Dict, Type
-from app.parsers.base import BaseParser
-from app.parsers.fortinet_parser import FortinetParser
-from app.parsers.zscaler_parser import ZscalerParser
-from app.parsers.cisco_parser import CiscoParser
+from parsers.base import BaseParser
+from parsers.fortinet_parser import FortinetParser
+from parsers.zscaler_parser import ZscalerParser
+from parsers.cisco_parser import CiscoParser
 
 
 class ParserFactory:

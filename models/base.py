@@ -4,7 +4,7 @@ Base models for firewall policy analysis.
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from datetime import datetime
-from app.models.vendors import VendorType, VendorNormalizedPolicy, NormalizedZone, NormalizedUserGroup
+from models.vendors import VendorType, VendorNormalizedPolicy, NormalizedZone, NormalizedUserGroup
 
 
 class FirewallConfig(BaseModel):

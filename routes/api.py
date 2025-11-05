@@ -7,10 +7,10 @@ from typing import List, Dict, Any
 import json
 import uuid
 
-from app.parsers.factory import ParserFactory
-from app.analyzers.policy_analyzer import PolicyAnalyzer
-from app.reports.json_report import JSONReportGenerator
-from app.models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
+from parsers.factory import ParserFactory
+from analyzers.policy_analyzer import PolicyAnalyzer
+from reports.json_report import JSONReportGenerator
+from models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
 from utils.visualization import PolicyVisualizer
 from utils.database import AnalysisDatabase
 

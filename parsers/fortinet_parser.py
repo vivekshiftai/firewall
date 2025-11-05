@@ -4,10 +4,10 @@ Fortinet FortiGate configuration parser.
 import json
 import logging
 from typing import Dict, Any, List
-from app.parsers.base import BaseParser
-from app.models.base import FirewallConfig
-from app.models.fortinet import FortinetPolicy, FortinetAddressObject, FortinetServiceObject
-from app.exceptions.custom_exceptions import ParserError
+from parsers.base import BaseParser
+from models.base import FirewallConfig
+from models.fortinet import FortinetPolicy, FortinetAddressObject, FortinetServiceObject
+from exceptions.custom_exceptions import ParserError
 
 logger = logging.getLogger(__name__)
 

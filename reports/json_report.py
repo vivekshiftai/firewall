@@ -4,9 +4,9 @@ JSON report generator for firewall policy analysis.
 import json
 import csv
 from typing import Dict, Any
-from app.reports.base import BaseReportGenerator
-from app.models.base import PolicyComparisonResult, ComplianceReport
-from app.exceptions.custom_exceptions import ReportGenerationError
+from reports.base import BaseReportGenerator
+from models.base import PolicyComparisonResult, ComplianceReport
+from exceptions.custom_exceptions import ReportGenerationError
 
 
 class JSONReportGenerator(BaseReportGenerator):
