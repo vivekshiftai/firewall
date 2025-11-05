@@ -2,11 +2,13 @@
 Main policy analyzer for cross-firewall policy analysis.
 """
 import logging
-from typing import Dict, Any, List
+import os
+from typing import Dict, Any, List, Optional
 from analyzers.base import BaseAnalyzer
 from models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
 from utils.embeddings import PolicyEmbedder
 from utils.mapping import SemanticMapper
+from analyzers.ai_analyzer import AIInconsistencyAnalyzer
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -14,46 +16,111 @@ logger = logging.getLogger(__name__)
 class PolicyAnalyzer(BaseAnalyzer):
     """Main analyzer for firewall policy analysis."""
 
-    def __init__(self):
-        """Initialize the policy analyzer."""
+    def __init__(self, use_ai: bool = True, openai_api_key: Optional[str] = None, openai_model: Optional[str] = None):
+        """
+        Initialize the policy analyzer.
+        
+        Args:
+            use_ai: Whether to use AI-powered analysis (default: True)
+            openai_api_key: OpenAI API key (if None, will try to get from OPENAI_API_KEY env var)
+            openai_model: OpenAI model to use (if None, will try to get from OPENAI_MODEL env var, default: gpt-3.5-turbo)
+        """
         logger.info("Initializing PolicyAnalyzer")
         self.embedder = PolicyEmbedder()
         self.mapper = SemanticMapper()
+        
+        # Get API key from parameter or environment variable
+        if openai_api_key is None:
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+        
+        # Get model from parameter or environment variable, with default
+        if openai_model is None:
+            openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+        
+        # Initialize AI analyzer if enabled
+        self.use_ai = use_ai
+        if self.use_ai:
+            try:
+                self.ai_analyzer = AIInconsistencyAnalyzer(
+                    api_key=openai_api_key,
+                    model=openai_model
+                )
+                if openai_api_key:
+                    logger.info(f"AI analyzer initialized successfully with model: {openai_model}")
+                else:
+                    logger.warning("AI analyzer initialized but API key not found. AI analysis will be disabled.")
+                    self.use_ai = False
+            except Exception as e:
+                logger.warning(f"Failed to initialize AI analyzer: {str(e)}. Continuing without AI.")
+                self.use_ai = False
+                self.ai_analyzer = None
+        else:
+            self.ai_analyzer = None
+            logger.info("AI analysis disabled")
+        
         logger.debug("PolicyAnalyzer components initialized")
         logger.info("PolicyAnalyzer initialized successfully")
 
     def analyze_single_firewall(self, config: FirewallConfig) -> Dict[str, Any]:
         """
         Analyze a single firewall configuration for internal inconsistencies.
+        Uses both rule-based analysis and AI-powered analysis.
         
         Args:
             config: Firewall configuration to analyze
             
         Returns:
-            Analysis results
+            Analysis results including both rule-based and AI findings
         """
         logger.info(f"Starting single firewall analysis for {config.vendor} firewall ID: {config.id}")
         try:
-            logger.debug("Checking for policy conflicts")
+            # Rule-based analysis
+            logger.debug("Running rule-based analysis")
             conflicts = self._check_policy_conflicts(config)
             logger.info(f"Found {len(conflicts)} policy conflicts")
             
-            logger.debug("Checking for redundant policies")
             redundancies = self._check_redundant_policies(config)
             logger.info(f"Found {len(redundancies)} redundant policies")
             
-            logger.debug("Checking for gaps in coverage")
             gaps = self._check_coverage_gaps(config)
             logger.info(f"Found {len(gaps)} coverage gaps")
             
+            # AI-powered analysis
+            ai_results = {}
+            if self.use_ai and self.ai_analyzer:
+                try:
+                    logger.debug("Running AI-powered analysis")
+                    ai_results = self.ai_analyzer.analyze_with_ai(config)
+                    logger.info("AI analysis completed")
+                except Exception as e:
+                    logger.error(f"AI analysis failed: {str(e)}. Continuing with rule-based results only.")
+                    ai_results = {
+                        "ai_analysis": {
+                            "enabled": False,
+                            "error": str(e)
+                        }
+                    }
+            else:
+                logger.debug("AI analysis skipped (not enabled or not available)")
+                ai_results = {
+                    "ai_analysis": {
+                        "enabled": False,
+                        "message": "AI analysis not enabled"
+                    }
+                }
+            
+            # Combine results
             results = {
                 "firewall_id": config.id,
                 "vendor": config.vendor,
                 "total_policies": len(config.policies),
-                "conflicts": conflicts,
-                "redundancies": redundancies,
-                "coverage_gaps": gaps,
-                "risk_score": self._calculate_risk_score(conflicts, redundancies, gaps)
+                "rule_based_analysis": {
+                    "conflicts": conflicts,
+                    "redundancies": redundancies,
+                    "coverage_gaps": gaps,
+                    "risk_score": self._calculate_risk_score(conflicts, redundancies, gaps)
+                },
+                **ai_results  # Include AI analysis results
             }
             
             logger.info("Single firewall analysis completed successfully")

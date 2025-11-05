@@ -2,6 +2,7 @@
 Main API routes for cross-firewall policy analysis.
 """
 import logging
+import os
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Dict, Any
 import json
@@ -16,7 +17,20 @@ router = APIRouter(prefix="/api/v1")
 
 # Initialize components
 logger.info("Initializing application components")
-analyzer = PolicyAnalyzer()
+# Get OpenAI API key from environment variable
+openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # Default to gpt-3.5-turbo
+
+if openai_api_key:
+    logger.info("OpenAI API key found in environment variable")
+else:
+    logger.warning("OPENAI_API_KEY not found in environment. AI analysis will be disabled.")
+
+analyzer = PolicyAnalyzer(
+    use_ai=True,
+    openai_api_key=openai_api_key,
+    openai_model=openai_model
+)
 logger.info("Application components initialized successfully")
 
 @router.post("/analyze-firewall")
@@ -27,8 +41,10 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
     This endpoint:
     1. Parses the uploaded firewall configuration JSON
     2. Validates the configuration
-    3. Analyzes for inconsistencies (conflicts, redundancies, coverage gaps)
-    4. Returns the analysis results
+    3. Analyzes for inconsistencies using:
+       - Rule-based analysis (conflicts, redundancies, coverage gaps)
+       - AI-powered analysis using OpenAI GPT-3.5 Turbo (if API key is configured)
+    4. Returns the combined analysis results
     
     Args:
         vendor: The firewall vendor (fortinet, zscaler, etc.)
@@ -37,10 +53,17 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
     Returns:
         Analysis results including:
         - Parsed configuration summary
-        - Policy conflicts
-        - Redundant policies
-        - Coverage gaps
-        - Risk score
+        - Rule-based analysis (conflicts, redundancies, coverage gaps, risk score)
+        - AI-powered analysis (findings, recommendations, risk assessment)
+        
+    Environment Variables:
+        OPENAI_API_KEY: OpenAI API key for AI-powered analysis (required for AI analysis)
+        OPENAI_MODEL: OpenAI model to use (default: gpt-3.5-turbo, optional)
+        
+    Note:
+        - The API key is automatically fetched from the OPENAI_API_KEY environment variable
+        - If OPENAI_API_KEY is not set, only rule-based analysis will be performed
+        - You can override the model by setting OPENAI_MODEL environment variable
     """
     logger.info(f"Starting firewall analysis for vendor: {vendor}")
     try:
@@ -70,10 +93,14 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
             raise HTTPException(status_code=400, detail="Invalid configuration data")
         logger.info("Configuration validated successfully")
         
-        # Analyze for inconsistencies
+        # Analyze for inconsistencies (includes both rule-based and AI analysis)
         logger.debug("Starting inconsistency analysis")
         analysis_results = analyzer.analyze_single_firewall(firewall_config)
         logger.info("Inconsistency analysis completed successfully")
+        
+        # Extract rule-based and AI analysis results
+        rule_based = analysis_results.get("rule_based_analysis", {})
+        ai_analysis = analysis_results.get("ai_analysis", {})
         
         # Combine parsed config summary with analysis results
         response = {
@@ -84,12 +111,21 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
                 "total_policies": len(firewall_config.policies),
                 "total_objects": len(firewall_config.objects or [])
             },
-            "analysis": analysis_results
+            "analysis": {
+                "rule_based": rule_based,
+                "ai_powered": ai_analysis
+            }
         }
         
-        logger.info(f"Analysis complete. Found {len(analysis_results.get('conflicts', []))} conflicts, "
-                   f"{len(analysis_results.get('redundancies', []))} redundancies, "
-                   f"{len(analysis_results.get('coverage_gaps', []))} coverage gaps")
+        # Log summary
+        conflicts_count = len(rule_based.get("conflicts", []))
+        redundancies_count = len(rule_based.get("redundancies", []))
+        gaps_count = len(rule_based.get("coverage_gaps", []))
+        ai_findings_count = len(ai_analysis.get("findings", [])) if ai_analysis.get("enabled") else 0
+        
+        logger.info(f"Analysis complete. Rule-based: {conflicts_count} conflicts, "
+                   f"{redundancies_count} redundancies, {gaps_count} coverage gaps. "
+                   f"AI analysis: {ai_findings_count} findings")
         
         return response
         
