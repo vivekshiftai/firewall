@@ -1,7 +1,7 @@
 import logging
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from app.routes.api import router as api_router
+from routes.api import router as api_router
 import secrets
 
 # Configure logging
@@ -80,4 +80,4 @@ async def get_supported_vendors(username: str = Depends(authenticate_user)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=4000)
+    uvicorn.run(app, host="0.0.0.0", port=5000)
