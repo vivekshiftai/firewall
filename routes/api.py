@@ -366,5 +366,3 @@ async def visualization_demo():
     </body>
     </html>
     """)
-
-// Remove the database-related endpoints since we're not using a database
