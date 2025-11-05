@@ -74,9 +74,22 @@ app.include_router(api_router)
 @app.on_event("startup")
 async def startup_event():
     """Event handler for application startup."""
+    import os
     logger.info("Application startup event triggered")
     logger.info("Cross-Firewall Policy Analysis Engine is starting up")
     logger.info("CORS configured to allow all origins")
+    
+    # Get the port from environment or default
+    port = os.getenv("PORT", "8000")
+    try:
+        port = int(port)
+    except ValueError:
+        port = 8000
+    
+    logger.info(f"FastAPI application ready")
+    logger.info(f"API Documentation (Swagger UI): http://0.0.0.0:{port}/docs")
+    logger.info(f"API Documentation (ReDoc): http://0.0.0.0:{port}/redoc")
+    logger.info(f"OpenAPI Schema: http://0.0.0.0:{port}/openapi.json")
     logger.info("Application startup completed successfully")
 
 @app.on_event("shutdown")
@@ -131,9 +144,10 @@ async def get_supported_vendors():
 if __name__ == "__main__":
     import uvicorn
     import sys
+    import os
     
-    # Default port
-    port = 8000
+    # Check environment variable first, then command line argument, then default
+    port = int(os.getenv("PORT", "8000"))
     
     # Check if port is specified as command line argument
     if "--port" in sys.argv:
@@ -143,6 +157,9 @@ if __name__ == "__main__":
                 port = int(sys.argv[port_index])
         except (ValueError, IndexError):
             logger.warning("Invalid port specified, using default port 8000")
+            port = 8000
     
-    logger.info(f"Starting server on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    logger.info(f"Starting server on host 0.0.0.0 port {port}")
+    logger.info(f"API documentation will be available at: http://0.0.0.0:{port}/docs")
+    logger.info(f"Alternative documentation at: http://0.0.0.0:{port}/redoc")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
