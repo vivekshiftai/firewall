@@ -1,15 +1,19 @@
 """
 Main policy analyzer for cross-firewall policy analysis.
+Includes enhanced validation, normalization, and 10 comprehensive checks.
 """
 import logging
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Set, Tuple
+from collections import defaultdict
 from analyzers.base import BaseAnalyzer
 from models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
 from utils.embeddings import PolicyEmbedder
 from utils.mapping import SemanticMapper
 from analyzers.ai_analyzer import AIInconsistencyAnalyzer
-from analyzers.enhanced_policy_analyzer import EnhancedPolicyAnalyzer
+from app.core.config_validator import ConfigValidator
+from app.core.normalizers import PolicyNormalizerEnhanced, NormalizedPolicyEnhanced
+from app.core.conflict_detector import PolicyInconsistencyEnhanced, InconsistencyType, SeverityLevel
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -88,12 +92,10 @@ class PolicyAnalyzer(BaseAnalyzer):
         """
         logger.info(f"Starting single firewall analysis for {config.vendor} firewall ID: {config.id}")
         try:
-            # Use enhanced analyzer if enabled
+            # Use enhanced analyzer if enabled (integrated directly)
             if use_enhanced:
                 logger.info("Using Enhanced Policy Analyzer with 10 comprehensive checks")
-                enhanced_analyzer = EnhancedPolicyAnalyzer(config)
-                enhanced_inconsistencies = enhanced_analyzer.analyze_all()
-                enhanced_summary = enhanced_analyzer.get_results_summary()
+                enhanced_inconsistencies, enhanced_summary = self._run_enhanced_analysis(config)
                 
                 # Convert enhanced inconsistencies to standard format
                 all_inconsistencies = [i.to_dict() for i in enhanced_inconsistencies]
@@ -1010,3 +1012,498 @@ class PolicyAnalyzer(BaseAnalyzer):
                     })
         
         return issues
+    
+    # ========================================================================
+    # Enhanced Analysis Methods (merged from enhanced_policy_analyzer.py)
+    # ========================================================================
+    
+    def _run_enhanced_analysis(self, config: FirewallConfig) -> Tuple[List[PolicyInconsistencyEnhanced], Dict[str, Any]]:
+        """
+        Run enhanced analysis with validation, normalization, and 10 comprehensive checks.
+        
+        Args:
+            config: Firewall configuration to analyze
+            
+        Returns:
+            Tuple of (list of inconsistencies, summary dict)
+        """
+        inconsistencies: List[PolicyInconsistencyEnhanced] = []
+        normalized_policies: List[NormalizedPolicyEnhanced] = []
+        analysis_metadata = {}
+        
+        logger.info("=" * 80)
+        logger.info("INITIALIZING ENHANCED POLICY ANALYZER")
+        logger.info("=" * 80)
+        
+        # Validate configuration
+        logger.info(f"\n[1/2] Validating {config.vendor} configuration")
+        config_dict = {
+            'policies': config.policies,
+            'firewall_policies': config.policies,
+            'vendor': config.vendor
+        }
+        
+        if config.vendor == 'fortinet':
+            is_valid, errors = ConfigValidator.validate_fortinet(config_dict)
+        elif config.vendor == 'zscaler':
+            is_valid, errors = ConfigValidator.validate_zscaler(config_dict)
+        else:
+            is_valid = True
+            errors = []
+            logger.warning(f"Unknown vendor {config.vendor}, skipping validation")
+        
+        if not is_valid:
+            logger.error(f"Configuration validation FAILED:")
+            for error in errors:
+                logger.error(f"  - {error}")
+        else:
+            logger.info(f"✓ Configuration validation passed")
+        
+        # Normalize policies
+        logger.info(f"\n[2/2] Normalizing {len(config.policies)} policies")
+        for policy in config.policies:
+            try:
+                if config.vendor == 'fortinet':
+                    normalized = PolicyNormalizerEnhanced.normalize_fortinet_policy(policy)
+                elif config.vendor == 'zscaler':
+                    policy_type = 'url_filtering'
+                    if 'dlp_settings' in policy:
+                        policy_type = 'dlp'
+                    elif 'applications' in policy:
+                        policy_type = 'zpa'
+                    normalized = PolicyNormalizerEnhanced.normalize_zscaler_policy(policy, policy_type)
+                else:
+                    logger.warning(f"Unknown vendor {config.vendor}, skipping normalization")
+                    continue
+                
+                normalized_policies.append(normalized)
+                logger.debug(f"  ✓ Normalized: {normalized.policy_name}")
+            except Exception as e:
+                logger.error(f"  ✗ Failed to normalize {policy.get('name', 'unknown')}: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+        
+        logger.info(f"✓ Normalized {len(normalized_policies)} policies")
+        
+        analysis_metadata = {
+            'vendor': config.vendor,
+            'policy_count': len(normalized_policies),
+            'config_valid': is_valid,
+            'validation_errors': errors
+        }
+        
+        # Run all 10 checks
+        logger.info("\n" + "=" * 80)
+        logger.info("STARTING COMPREHENSIVE ANALYSIS (10 CHECKS)")
+        logger.info("=" * 80)
+        
+        self._enhanced_check_1_contradictory_rules(normalized_policies, config, inconsistencies)
+        self._enhanced_check_2_duplicate_policies(normalized_policies, config, inconsistencies)
+        self._enhanced_check_3_overly_permissive_rules(normalized_policies, config, inconsistencies)
+        self._enhanced_check_4_utm_profile_inconsistency(normalized_policies, config, inconsistencies)
+        self._enhanced_check_5_user_group_consistency(normalized_policies, config, inconsistencies)
+        self._enhanced_check_6_dlp_coverage_gaps(normalized_policies, config, inconsistencies)
+        self._enhanced_check_7_application_access_gaps(normalized_policies, config, inconsistencies)
+        self._enhanced_check_8_missing_security_coverage(normalized_policies, config, inconsistencies)
+        self._enhanced_check_9_logging_consistency(normalized_policies, config, inconsistencies)
+        self._enhanced_check_10_mfa_encryption_requirements(normalized_policies, config, inconsistencies)
+        
+        logger.info("\n" + "=" * 80)
+        logger.info(f"ANALYSIS COMPLETE: Found {len(inconsistencies)} inconsistencies")
+        logger.info("=" * 80)
+        
+        # Generate summary
+        by_severity = {
+            'CRITICAL': len([i for i in inconsistencies if i.severity == SeverityLevel.CRITICAL]),
+            'HIGH': len([i for i in inconsistencies if i.severity == SeverityLevel.HIGH]),
+            'MEDIUM': len([i for i in inconsistencies if i.severity == SeverityLevel.MEDIUM]),
+            'LOW': len([i for i in inconsistencies if i.severity == SeverityLevel.LOW]),
+        }
+        
+        by_type = defaultdict(int)
+        for i in inconsistencies:
+            by_type[i.type.value] += 1
+        
+        summary = {
+            'total_inconsistencies': len(inconsistencies),
+            'by_severity': by_severity,
+            'by_type': dict(by_type),
+            'metadata': analysis_metadata
+        }
+        
+        return inconsistencies, summary
+    
+    def _enhanced_check_1_contradictory_rules(self, normalized_policies: List[NormalizedPolicyEnhanced], 
+                                             config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 1/10: Contradictory Rules."""
+        logger.info("\n[CHECK 1/10] Contradictory Rules")
+        
+        contradictions = []
+        for i, policy1 in enumerate(normalized_policies):
+            for policy2 in normalized_policies[i+1:]:
+                if self._enhanced_policies_overlap(policy1, policy2):
+                    action1_allows = policy1.action in ['allow', 'accept']
+                    action2_allows = policy2.action in ['allow', 'accept']
+                    action1_denies = policy1.action in ['deny', 'block', 'reject']
+                    action2_denies = policy2.action in ['deny', 'block', 'reject']
+                    
+                    if (action1_allows and action2_denies) or (action1_denies and action2_allows):
+                        contradictions.append((policy1, policy2))
+        
+        for pol1, pol2 in contradictions:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"CONT_{pol1.policy_id}_{pol2.policy_id}",
+                type=InconsistencyType.CONTRADICTORY_ALLOW_DENY,
+                severity=SeverityLevel.HIGH,
+                description=f"Policies '{pol1.policy_name}' and '{pol2.policy_name}' have overlapping rules with contradictory actions",
+                affected_fortinet_policies=[pol1.policy_id, pol2.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[pol1.policy_id, pol2.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(pol1.source_users | pol2.source_users),
+                root_cause="Same source/destination/service but different actions (allow vs deny)",
+                business_impact="Unclear policy enforcement, potential security bypass or false blocking",
+                recommendation="Review policy order and intent; consolidate if redundant",
+                confidence_score=0.98,
+                evidence={
+                    'policy1': {'id': pol1.policy_id, 'name': pol1.policy_name, 'action': pol1.action},
+                    'policy2': {'id': pol2.policy_id, 'name': pol2.policy_name, 'action': pol2.action}
+                }
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(contradictions)} contradictory rule pairs")
+    
+    def _enhanced_check_2_duplicate_policies(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                           config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 2/10: Duplicate Policies."""
+        logger.info("\n[CHECK 2/10] Duplicate Policies")
+        
+        hash_map = defaultdict(list)
+        for policy in normalized_policies:
+            h = policy.semantic_hash()
+            hash_map[h].append(policy)
+        
+        duplicates = [(policies[0], policies[1:]) 
+                     for policies in hash_map.values() 
+                     if len(policies) > 1]
+        
+        for orig, dups in duplicates:
+            dup_ids = [d.policy_id for d in dups]
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"DUP_{orig.policy_id}",
+                type=InconsistencyType.DUPLICATE_POLICY,
+                severity=SeverityLevel.LOW,
+                description=f"Policy '{orig.policy_name}' is duplicated ({len(dups)} times)",
+                affected_fortinet_policies=[orig.policy_id] + dup_ids if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[orig.policy_id] + dup_ids if config.vendor == 'zscaler' else [],
+                root_cause="Multiple policies with identical source, destination, and action",
+                recommendation="Consolidate duplicate policies into a single rule",
+                confidence_score=0.90,
+                evidence={'duplicate_ids': dup_ids}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(duplicates)} duplicate policy sets")
+    
+    def _enhanced_check_3_overly_permissive_rules(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                                  config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 3/10: Overly Permissive Rules."""
+        logger.info("\n[CHECK 3/10] Overly Permissive Rules")
+        
+        overly_permissive = []
+        for policy in normalized_policies:
+            if policy.action in ['allow', 'accept']:
+                if policy.applies_to_all_sources or policy.applies_to_all_destinations:
+                    overly_permissive.append(policy)
+        
+        for policy in overly_permissive:
+            issue_type = "source" if policy.applies_to_all_sources else "destination"
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"PERM_{policy.policy_id}",
+                type=InconsistencyType.OVERLY_PERMISSIVE,
+                severity=SeverityLevel.HIGH,
+                description=f"Policy '{policy.policy_name}' allows traffic from/to all {issue_type}s",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause=f"Policy allows all {issue_type}s (violates least-privilege principle)",
+                business_impact="Excessive access permissions, potential security risk",
+                recommendation=f"Restrict {issue_type} addresses to specific networks or zones",
+                confidence_score=0.95,
+                evidence={'policy_type': issue_type, 'applies_to_all_sources': policy.applies_to_all_sources}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(overly_permissive)} overly permissive rules")
+    
+    def _enhanced_check_4_utm_profile_inconsistency(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                                    config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 4/10: UTM Profile Inconsistency."""
+        logger.info("\n[CHECK 4/10] UTM Profile Inconsistency")
+        
+        unprotected = []
+        for policy in normalized_policies:
+            if (policy.action in ['allow', 'accept'] and 
+                policy.applies_to_all_destinations and 
+                not policy.utm_profiles and 
+                not policy.dlp_enabled):
+                unprotected.append(policy)
+        
+        for policy in unprotected:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"UTM_{policy.policy_id}",
+                type=InconsistencyType.INTERNET_ACCESS_UNPROTECTED,
+                severity=SeverityLevel.HIGH,
+                description=f"Policy '{policy.policy_name}' allows internet access without UTM protection",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="Internet access granted without UTM/AV/IPS profiles",
+                business_impact="Users exposed to internet threats without inspection",
+                recommendation="Enable UTM profiles (AV, IPS, WebFilter) or use Zscaler protection",
+                confidence_score=0.99,
+                evidence={'missing_utm': list(policy.utm_profiles), 'dest_type': policy.dest_type}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(unprotected)} policies without UTM protection")
+    
+    def _enhanced_check_5_user_group_consistency(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                                  config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 5/10: User Group Consistency."""
+        logger.info("\n[CHECK 5/10] User Group Consistency")
+        
+        group_policies = defaultdict(list)
+        for policy in normalized_policies:
+            for group in policy.source_users:
+                group_policies[group].append(policy)
+        
+        issues = []
+        for group, policies in group_policies.items():
+            actions = set(p.action for p in policies)
+            if 'allow' in actions and 'deny' in actions:
+                destinations = set()
+                for p in policies:
+                    if p.applies_to_all_destinations:
+                        destinations.add('all')
+                    else:
+                        destinations.add(p.dest_resource)
+                
+                if len(destinations) == 1 and 'all' in destinations:
+                    issues.append((group, policies))
+        
+        for group, policies in issues:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"UG_{group}",
+                type=InconsistencyType.USER_GROUP_PERMISSION_MISMATCH,
+                severity=SeverityLevel.MEDIUM,
+                description=f"Group '{group}' has conflicting access patterns (allow and deny for same destination)",
+                affected_user_groups=[group],
+                root_cause="Same group has both allow and deny policies for same destination",
+                business_impact="Unclear access control for group members",
+                recommendation="Review policies for group and ensure consistent access control",
+                confidence_score=0.85,
+                evidence={'group': group, 'policies': [p.policy_name for p in policies]}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(issues)} user group consistency issues")
+    
+    def _enhanced_check_6_dlp_coverage_gaps(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                            config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 6/10: DLP Coverage Gaps."""
+        logger.info("\n[CHECK 6/10] DLP Coverage Gaps")
+        
+        sensitive_keywords = {'finance', 'accounting', 'legal', 'hr', 'executive', 'sales', 'crm'}
+        sensitive_policies = [p for p in normalized_policies 
+                            if any(kw in str(p.source_users).lower() or kw in p.policy_name.lower()
+                                   for kw in sensitive_keywords)]
+        
+        missing_dlp = [p for p in sensitive_policies 
+                      if not p.dlp_enabled and p.action in ['allow', 'accept']]
+        
+        for policy in missing_dlp:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"DLP_{policy.policy_id}",
+                type=InconsistencyType.DLP_COVERAGE_GAP,
+                severity=SeverityLevel.HIGH,
+                description=f"Sensitive group '{policy.source_users}' not protected by DLP",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="DLP profile not enabled on sensitive group policy",
+                business_impact="Sensitive data access not monitored/prevented",
+                recommendation="Enable DLP profile for this policy",
+                confidence_score=0.95,
+                evidence={'affected_group': str(policy.source_users), 'policy_name': policy.policy_name}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(missing_dlp)} DLP coverage gaps")
+    
+    def _enhanced_check_7_application_access_gaps(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                                  config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 7/10: Application Access Gaps."""
+        logger.info("\n[CHECK 7/10] Application Access Gaps")
+        
+        app_protocols = {'http', 'https', 'ftp', 'ssh', 'rdp', 'smb', 'ldap', 'dns'}
+        app_policies = [p for p in normalized_policies 
+                       if p.action in ['allow', 'accept'] and
+                       any(any(proto in str(prot).lower() for proto in app_protocols) 
+                           for prot in p.protocols)]
+        
+        missing_controls = [p for p in app_policies 
+                           if not p.utm_profiles and not p.dlp_enabled]
+        
+        for policy in missing_controls:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"APP_{policy.policy_id}",
+                type=InconsistencyType.ENFORCEMENT_CONFLICT,
+                severity=SeverityLevel.MEDIUM,
+                description=f"Policy '{policy.policy_name}' allows application access without controls",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="Application access granted without application control or UTM",
+                business_impact="Application traffic not inspected or controlled",
+                recommendation="Enable application control or application list on this policy",
+                confidence_score=0.80,
+                evidence={'protocols': list(policy.protocols)}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(missing_controls)} application access gaps")
+    
+    def _enhanced_check_8_missing_security_coverage(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                                   config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 8/10: Missing Security Coverage."""
+        logger.info("\n[CHECK 8/10] Missing Security Coverage")
+        
+        internet_policies = [p for p in normalized_policies 
+                            if p.action in ['allow', 'accept'] and 
+                            p.applies_to_all_destinations]
+        
+        missing_coverage = [p for p in internet_policies 
+                           if not p.utm_profiles and 
+                           'webfilter' not in str(p.utm_profiles).lower()]
+        
+        for policy in missing_coverage:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"COV_{policy.policy_id}",
+                type=InconsistencyType.MISSING_UTM_PROFILE,
+                severity=SeverityLevel.HIGH,
+                description=f"Policy '{policy.policy_name}' allows internet access without URL filtering",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="Internet access policy missing URL filtering/web filtering",
+                business_impact="Users can access inappropriate or malicious websites",
+                recommendation="Enable URL filtering or web filtering profile on this policy",
+                confidence_score=0.90,
+                evidence={'dest_type': policy.dest_type}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(missing_coverage)} missing security coverage issues")
+    
+    def _enhanced_check_9_logging_consistency(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                              config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 9/10: Logging Consistency."""
+        logger.info("\n[CHECK 9/10] Logging Consistency")
+        
+        critical_keywords = {'security', 'audit', 'finance', 'executive', 'admin', 'it-'}
+        critical_policies = [p for p in normalized_policies
+                           if any(kw in str(p.source_users).lower() or kw in p.policy_name.lower()
+                                  for kw in critical_keywords)]
+        
+        no_logging = [p for p in critical_policies if not p.logging_enabled]
+        
+        for policy in no_logging:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"LOG_{policy.policy_id}",
+                type=InconsistencyType.MISSING_LOGGING,
+                severity=SeverityLevel.MEDIUM,
+                description=f"Critical policy '{policy.policy_name}' has logging disabled",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="Logging not enabled on critical access policy",
+                business_impact="No audit trail for compliance and security monitoring",
+                recommendation="Enable logging for audit trail and compliance",
+                confidence_score=0.90,
+                evidence={'policy_name': policy.policy_name}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(no_logging)} logging gaps")
+    
+    def _enhanced_check_10_mfa_encryption_requirements(self, normalized_policies: List[NormalizedPolicyEnhanced],
+                                                       config: FirewallConfig, inconsistencies: List[PolicyInconsistencyEnhanced]):
+        """Check 10/10: MFA/Encryption Requirements."""
+        logger.info("\n[CHECK 10/10] MFA/Encryption Requirements")
+        
+        sensitive_policies = [p for p in normalized_policies 
+                            if p.action in ['allow', 'accept'] and
+                            (p.applies_to_all_destinations or 
+                             any(kw in str(p.source_users).lower() 
+                                 for kw in ['finance', 'executive', 'admin', 'hr']))]
+        
+        missing_mfa = [p for p in sensitive_policies if not p.requires_mfa]
+        missing_encryption = [p for p in sensitive_policies if not p.requires_encryption]
+        
+        for policy in missing_mfa:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"MFA_{policy.policy_id}",
+                type=InconsistencyType.MFA_REQUIREMENT_MISMATCH,
+                severity=SeverityLevel.HIGH,
+                description=f"Sensitive policy '{policy.policy_name}' does not require MFA",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="MFA not required for sensitive access",
+                business_impact="Potential unauthorized access to sensitive resources",
+                recommendation="Enable MFA requirement for this policy",
+                confidence_score=0.85,
+                evidence={'policy_name': policy.policy_name}
+            )
+            inconsistencies.append(inconsistency)
+        
+        for policy in missing_encryption:
+            inconsistency = PolicyInconsistencyEnhanced(
+                inconsistency_id=f"ENC_{policy.policy_id}",
+                type=InconsistencyType.ENCRYPTION_GAP,
+                severity=SeverityLevel.HIGH,
+                description=f"Sensitive policy '{policy.policy_name}' does not require encryption",
+                affected_fortinet_policies=[policy.policy_id] if config.vendor == 'fortinet' else [],
+                affected_zscaler_policies=[policy.policy_id] if config.vendor == 'zscaler' else [],
+                affected_user_groups=list(policy.source_users),
+                root_cause="Encryption not required for sensitive access",
+                business_impact="Sensitive data may be transmitted in plaintext",
+                recommendation="Enable encryption requirement for this policy",
+                confidence_score=0.85,
+                evidence={'policy_name': policy.policy_name}
+            )
+            inconsistencies.append(inconsistency)
+        
+        logger.info(f"  ✓ Found {len(missing_mfa)} MFA gaps, {len(missing_encryption)} encryption gaps")
+    
+    def _enhanced_policies_overlap(self, policy1: NormalizedPolicyEnhanced, 
+                                   policy2: NormalizedPolicyEnhanced) -> bool:
+        """Check if two policies overlap."""
+        if policy1.applies_to_all_sources or policy2.applies_to_all_sources:
+            src_overlap = True
+        else:
+            src_overlap = bool(policy1.source_users & policy2.source_users) or not (policy1.source_users and policy2.source_users)
+        
+        if policy1.applies_to_all_destinations or policy2.applies_to_all_destinations:
+            dst_overlap = True
+        elif policy1.dest_resource == policy2.dest_resource:
+            dst_overlap = True
+        else:
+            dst_overlap = False
+        
+        if not (policy1.protocols and policy2.protocols):
+            service_overlap = True
+        else:
+            service_overlap = bool(policy1.protocols & policy2.protocols)
+        
+        return src_overlap and dst_overlap and service_overlap

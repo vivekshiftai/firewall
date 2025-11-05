@@ -93,16 +93,33 @@ class FortinetParser(BaseParser):
         Returns:
             True if it looks like a policy, False otherwise
         """
+        if not isinstance(policy_data, dict):
+            return False
+        
         # Check for required policy fields (either exact or with variations)
-        has_srcintf = "srcintf" in policy_data or "source_interface" in policy_data or "source-interface" in policy_data
-        has_dstintf = "dstintf" in policy_data or "destination_interface" in policy_data or "destination-interface" in policy_data
-        has_srcaddr = "srcaddr" in policy_data or "source_address" in policy_data or "source-address" in policy_data
-        has_dstaddr = "dstaddr" in policy_data or "destination_address" in policy_data or "destination-address" in policy_data
+        has_srcintf = ("srcintf" in policy_data or "source_interface" in policy_data or 
+                      "source-interface" in policy_data or "srcintf" in str(policy_data).lower())
+        has_dstintf = ("dstintf" in policy_data or "destination_interface" in policy_data or 
+                      "destination-interface" in policy_data or "dstintf" in str(policy_data).lower())
+        has_srcaddr = ("srcaddr" in policy_data or "source_address" in policy_data or 
+                      "source-address" in policy_data or "srcaddr" in str(policy_data).lower())
+        has_dstaddr = ("dstaddr" in policy_data or "destination_address" in policy_data or 
+                      "destination-address" in policy_data or "dstaddr" in str(policy_data).lower())
         has_action = "action" in policy_data
         has_service = "service" in policy_data or "services" in policy_data
         
-        # A valid policy should have at least source/destination interfaces or addresses, and an action
-        return (has_srcintf or has_srcaddr) and (has_dstintf or has_dstaddr) and has_action
+        # Check for policy identifier (policyid, policy_id, id)
+        has_policy_id = "policyid" in policy_data or "policy_id" in policy_data or "id" in policy_data
+        
+        # A valid policy should have:
+        # 1. At least source/destination interfaces or addresses, AND
+        # 2. An action, AND  
+        # 3. Either a policy ID or name (to identify it)
+        has_source = has_srcintf or has_srcaddr
+        has_destination = has_dstintf or has_dstaddr
+        has_identifier = has_policy_id or "name" in policy_data
+        
+        return has_source and has_destination and has_action and has_identifier
     
     def _parse_policies(self, policies_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -123,13 +140,25 @@ class FortinetParser(BaseParser):
                 # Skip if it doesn't look like a policy
                 if not self._is_policy(policy_data):
                     logger.debug(f"Skipping item {i+1} - does not appear to be a firewall policy")
+                    logger.debug(f"  Item keys: {list(policy_data.keys()) if isinstance(policy_data, dict) else 'not a dict'}")
                     skipped += 1
                     continue
                 
-                logger.debug(f"Parsing policy {i+1}")
+                logger.debug(f"Parsing policy {i+1}: {policy_data.get('name', policy_data.get('policyid', 'unknown'))}")
                 
                 # Map field variations to expected format
                 mapped_data = self._map_policy_fields(policy_data)
+                
+                # Ensure all required fields are present for FortinetPolicy
+                required_fields = ['id', 'name', 'srcintf', 'dstintf', 'srcaddr', 'dstaddr', 'service', 'action', 'status', 'schedule']
+                missing_fields = [f for f in required_fields if f not in mapped_data]
+                if missing_fields:
+                    logger.warning(f"Policy {i+1} missing required fields: {missing_fields}")
+                    # Add defaults for missing required fields
+                    if 'status' not in mapped_data:
+                        mapped_data['status'] = 'enable'
+                    if 'schedule' not in mapped_data:
+                        mapped_data['schedule'] = 'always'
                 
                 # Try to create FortinetPolicy object
                 fortinet_policy = FortinetPolicy(**mapped_data)
@@ -278,6 +307,9 @@ class FortinetParser(BaseParser):
                 logger.debug(f"Policy {i+1} parsed successfully")
             except Exception as e:
                 logger.warning(f"Error parsing policy {i+1}: {str(e)}")
+                logger.debug(f"  Policy data keys: {list(policy_data.keys()) if isinstance(policy_data, dict) else 'not a dict'}")
+                import traceback
+                logger.debug(f"  Traceback: {traceback.format_exc()}")
                 skipped += 1
                 continue
         
@@ -296,9 +328,11 @@ class FortinetParser(BaseParser):
         """
         mapped = {}
         
-        # Map ID field
+        # Map ID field - handle policyid, policy_id, and id
         policy_id = None
-        if "id" in policy_data:
+        if "policyid" in policy_data:
+            policy_id = int(policy_data["policyid"]) if isinstance(policy_data["policyid"], (int, str)) else policy_data["policyid"]
+        elif "id" in policy_data:
             policy_id = int(policy_data["id"]) if isinstance(policy_data["id"], (int, str)) else policy_data["id"]
         elif "policy_id" in policy_data:
             policy_id = int(policy_data["policy_id"]) if isinstance(policy_data["policy_id"], (int, str)) else policy_data["policy_id"]
@@ -333,10 +367,18 @@ class FortinetParser(BaseParser):
         mapped["action"] = policy_data.get("action", "deny")
         
         # Map status (default to "enable" if not present, as Fortinet policies are enabled by default)
-        mapped["status"] = policy_data.get("status") or policy_data.get("enabled") or "enable"
+        # Handle both "enable"/"disable" string and boolean
+        status_value = policy_data.get("status")
+        if status_value is None:
+            status_value = policy_data.get("enabled")
+            if isinstance(status_value, bool):
+                status_value = "enable" if status_value else "disable"
+        if status_value is None:
+            status_value = "enable"  # Default
+        mapped["status"] = str(status_value).lower()
         
-        # Map schedule
-        mapped["schedule"] = policy_data.get("schedule", "always")
+        # Map schedule (default to "always" if not present)
+        mapped["schedule"] = policy_data.get("schedule") or "always"
         
         # Map comments
         mapped["comments"] = policy_data.get("comments", policy_data.get("comment", ""))

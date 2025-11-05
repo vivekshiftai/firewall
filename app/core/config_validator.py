@@ -24,12 +24,12 @@ class ConfigValidator:
         """
         errors = []
         
-        # Check required top-level keys
-        if 'firewall_policies' not in config:
-            errors.append("Missing 'firewall_policies' key")
+        # Check required top-level keys (handle both 'policies' and 'firewall_policies')
+        if 'policies' not in config and 'firewall_policies' not in config:
+            errors.append("Missing 'policies' or 'firewall_policies' key")
         
         # Validate policies structure
-        policies = config.get('firewall_policies', [])
+        policies = config.get('policies', config.get('firewall_policies', []))
         if not isinstance(policies, list):
             errors.append(f"'firewall_policies' should be list, got {type(policies)}")
             return False, errors
@@ -39,11 +39,21 @@ class ConfigValidator:
                 errors.append(f"Policy {i} is not a dict: {type(policy)}")
                 continue
             
-            # Check required policy fields
-            required = ['policy_id', 'name', 'action']
-            for field in required:
-                if field not in policy:
-                    errors.append(f"Policy {i} missing '{field}'")
+            # Check required policy fields (handle both policyid and policy_id)
+            # Check all possible field names - policyid (no underscore) is the correct Fortinet format
+            has_policy_id = 'policyid' in policy or 'policy_id' in policy or 'id' in policy
+            has_name = 'name' in policy
+            has_action = 'action' in policy
+            
+            if not has_policy_id:
+                # Log available keys for debugging
+                available_keys = list(policy.keys())[:10]  # First 10 keys for debugging
+                logger.debug(f"Policy {i} available keys: {available_keys}")
+                errors.append(f"Policy {i} missing 'policyid' or 'policy_id' or 'id' (available keys: {available_keys})")
+            if not has_name:
+                errors.append(f"Policy {i} missing 'name'")
+            if not has_action:
+                errors.append(f"Policy {i} missing 'action'")
             
             # Validate field types
             if 'action' in policy and not isinstance(policy['action'], str):
