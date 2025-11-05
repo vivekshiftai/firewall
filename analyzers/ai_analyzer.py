@@ -314,6 +314,107 @@ Return your analysis in the JSON format specified in the system prompt."""
         
         return prompt
     
+    def _analyze_inconsistencies_batched(self, inconsistencies: List[Dict[str, Any]], vendor: str, batch_size: int) -> Dict[str, Any]:
+        """
+        Analyze inconsistencies in batches to handle large numbers.
+        
+        Args:
+            inconsistencies: List of inconsistency dictionaries
+            vendor: Vendor name
+            batch_size: Number of inconsistencies per batch
+            
+        Returns:
+            Combined AI analysis results
+        """
+        logger.info(f"Analyzing {len(inconsistencies)} inconsistencies in batches of {batch_size}")
+        
+        all_analyzed_inconsistencies = []
+        all_priority_recommendations = []
+        total_critical = 0
+        total_high = 0
+        total_medium = 0
+        total_low = 0
+        
+        # Process in batches
+        for batch_idx in range(0, len(inconsistencies), batch_size):
+            batch = inconsistencies[batch_idx:batch_idx + batch_size]
+            batch_num = batch_idx // batch_size + 1
+            total_batches = (len(inconsistencies) + batch_size - 1) // batch_size
+            
+            logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch)} inconsistencies)")
+            
+            try:
+                # Analyze this batch (force_batch=False to prevent recursion)
+                batch_result = self.analyze_inconsistencies(batch, vendor, force_batch=False)
+                
+                if batch_result.get("ai_analysis", {}).get("enabled"):
+                    analyzed = batch_result["ai_analysis"].get("analyzed_inconsistencies", [])
+                    all_analyzed_inconsistencies.extend(analyzed)
+                    
+                    # Collect priority recommendations
+                    priority_recs = batch_result["ai_analysis"].get("priority_recommendations", [])
+                    all_priority_recommendations.extend(priority_recs)
+                    
+                    # Count severities from this batch
+                    for inc in analyzed:
+                        severity = inc.get("severity", {}).get("level", "MEDIUM")
+                        if severity == "CRITICAL":
+                            total_critical += 1
+                        elif severity == "HIGH":
+                            total_high += 1
+                        elif severity == "MEDIUM":
+                            total_medium += 1
+                        elif severity == "LOW":
+                            total_low += 1
+                    
+                    logger.info(f"  Batch {batch_num}: Analyzed {len(analyzed)} inconsistencies")
+                else:
+                    logger.warning(f"  Batch {batch_num}: AI analysis failed or was disabled")
+                    
+            except Exception as e:
+                logger.error(f"Error analyzing batch {batch_num}: {str(e)}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                continue
+        
+        # Combine results
+        overall_risk = "HIGH" if total_critical > 0 or total_high > 5 else \
+                      "MEDIUM" if total_high > 0 or total_medium > 10 else "LOW"
+        
+        overall_risk_score = min(1.0, (total_critical * 0.4 + total_high * 0.3 + total_medium * 0.2 + total_low * 0.1) / max(len(inconsistencies), 1))
+        
+        # Deduplicate and prioritize recommendations
+        unique_recommendations = {}
+        for rec in all_priority_recommendations:
+            priority = rec.get("priority", 999)
+            if priority not in unique_recommendations:
+                unique_recommendations[priority] = rec
+        
+        sorted_recommendations = sorted(unique_recommendations.values(), key=lambda x: x.get("priority", 999))
+        
+        return {
+            "ai_analysis": {
+                "enabled": True,
+                "model": self.model,
+                "analyzed_count": len(all_analyzed_inconsistencies),
+                "analyzed_inconsistencies": all_analyzed_inconsistencies,
+                "summary": f"Analyzed {len(all_analyzed_inconsistencies)} inconsistencies across {total_batches} batches",
+                "overall_assessment": {
+                    "total_critical": total_critical,
+                    "total_high": total_high,
+                    "total_medium": total_medium,
+                    "total_low": total_low,
+                    "overall_risk": overall_risk,
+                    "overall_risk_score": overall_risk_score,
+                    "key_concerns": [
+                        f"{total_critical} critical issues",
+                        f"{total_high} high severity issues"
+                    ] if (total_critical > 0 or total_high > 0) else ["No critical issues found"]
+                },
+                "priority_recommendations": sorted_recommendations[:10]  # Top 10 recommendations
+            }
+        }
+    
     def analyze_policy_batch(self, policies: List[Dict[str, Any]], batch_size: int = 10) -> Dict[str, Any]:
         """
         Analyze policies in batches to handle large configurations.
@@ -362,7 +463,7 @@ Return your analysis in the JSON format specified in the system prompt."""
             }
         }
     
-    def analyze_inconsistencies(self, inconsistencies: List[Dict[str, Any]], vendor: str = "fortinet") -> Dict[str, Any]:
+    def analyze_inconsistencies(self, inconsistencies: List[Dict[str, Any]], vendor: str = "fortinet", force_batch: bool = False) -> Dict[str, Any]:
         """
         Analyze inconsistent policies found by rule-based checks using AI.
         Sends inconsistencies to AI for detailed analysis by type, severity, reason, and solution.
@@ -370,6 +471,7 @@ Return your analysis in the JSON format specified in the system prompt."""
         Args:
             inconsistencies: List of inconsistency dictionaries (from enhanced checks)
             vendor: Vendor name (fortinet or zscaler)
+            force_batch: If True, force batching even for small lists (used internally)
             
         Returns:
             AI analysis results with structured analysis for each inconsistency
@@ -394,6 +496,21 @@ Return your analysis in the JSON format specified in the system prompt."""
             }
         
         logger.info(f"Analyzing {len(inconsistencies)} inconsistencies with AI (model: {self.model})")
+        
+        # Determine batch size based on model context limits
+        # GPT-5: ~128k tokens, GPT-4o: ~128k tokens, GPT-3.5-turbo: ~16k tokens
+        # Estimate ~200-300 tokens per inconsistency, so batch accordingly
+        if self.model == "gpt-5" or self.model == "gpt-4o":
+            batch_size = 30  # Conservative batch size for GPT-5/4o (can handle 50+, but use 30 to be safe)
+            max_tokens_per_batch = 100000  # Conservative limit
+        else:
+            batch_size = 5  # Small batches for models with smaller context (gpt-3.5-turbo)
+            max_tokens_per_batch = 10000  # Conservative limit for gpt-3.5-turbo
+        
+        # Batch inconsistencies if there are too many (or if forced)
+        if force_batch or len(inconsistencies) > batch_size:
+            logger.info(f"Batching {len(inconsistencies)} inconsistencies into batches of {batch_size} for analysis")
+            return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
         
         try:
             # Format inconsistencies for AI analysis
@@ -424,9 +541,46 @@ Return your analysis in the JSON format specified in the system prompt."""
                     ai_response = json.loads(response_text)
                     
                 except Exception as model_error:
+                    error_str = str(model_error)
+                    # Check if it's a context length error
+                    if "context_length" in error_str.lower() or "maximum context length" in error_str.lower():
+                        logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with GPT-5")
+                        logger.info(f"Automatically batching {len(inconsistencies)} inconsistencies to handle context limit")
+                        # Automatically batch if context length is exceeded
+                        batch_size = 30
+                        return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
                     # If GPT-5 API is not available, fallback to gpt-4o with chat completions
                     logger.warning(f"GPT-5 API not available ({str(model_error)}), falling back to gpt-4o")
                     self.model = "gpt-4o"
+                    try:
+                        response = self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": self._get_inconsistency_system_prompt()
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            temperature=0.2,
+                            response_format={"type": "json_object"}
+                        )
+                        ai_response = json.loads(response.choices[0].message.content)
+                    except Exception as fallback_error:
+                        error_str_fallback = str(fallback_error)
+                        # Check if fallback also has context length error
+                        if "context_length" in error_str_fallback.lower() or "maximum context length" in error_str_fallback.lower():
+                            logger.warning(f"Context length exceeded even with gpt-4o, batching {len(inconsistencies)} inconsistencies")
+                            batch_size = 30
+                            return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+                        else:
+                            raise  # Re-raise if it's not a context length error
+            else:
+                # Use standard chat completions API for other models
+                try:
                     response = self.client.chat.completions.create(
                         model=self.model,
                         messages=[
@@ -443,24 +597,21 @@ Return your analysis in the JSON format specified in the system prompt."""
                         response_format={"type": "json_object"}
                     )
                     ai_response = json.loads(response.choices[0].message.content)
-            else:
-                # Use standard chat completions API for other models
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": self._get_inconsistency_system_prompt()
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    temperature=0.2,
-                    response_format={"type": "json_object"}
-                )
-                ai_response = json.loads(response.choices[0].message.content)
+                except Exception as api_error:
+                    error_str = str(api_error)
+                    # Check if it's a context length error
+                    if "context_length" in error_str.lower() or "maximum context length" in error_str.lower():
+                        logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with model {self.model}")
+                        logger.info(f"Automatically batching {len(inconsistencies)} inconsistencies to handle context limit")
+                        # Automatically batch if context length is exceeded
+                        if self.model == "gpt-5" or self.model == "gpt-4o":
+                            batch_size = 30
+                        else:
+                            batch_size = 5
+                        return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+                    else:
+                        raise  # Re-raise if it's not a context length error
+            
             logger.info(f"AI analysis completed successfully. Analyzed {len(ai_response.get('analyzed_inconsistencies', []))} inconsistencies")
             
             return {
@@ -490,6 +641,7 @@ Return your analysis in the JSON format specified in the system prompt."""
     def _format_inconsistencies_for_ai(self, inconsistencies: List[Dict[str, Any]], vendor: str) -> str:
         """
         Format inconsistencies into a readable text format for AI analysis.
+        Uses compact format to reduce token count.
         
         Args:
             inconsistencies: List of inconsistency dictionaries
@@ -501,56 +653,74 @@ Return your analysis in the JSON format specified in the system prompt."""
         formatted = []
         for idx, inconsistency in enumerate(inconsistencies, 1):
             inc_text = f"\n=== Inconsistency {idx} ===\n"
-            inc_text += f"Inconsistency ID: {inconsistency.get('inconsistency_id', f'INC_{idx}')}\n"
+            inc_text += f"ID: {inconsistency.get('inconsistency_id', f'INC_{idx}')}\n"
             inc_text += f"Type: {inconsistency.get('type', 'Unknown')}\n"
             inc_text += f"Severity: {inconsistency.get('severity', 'MEDIUM')}\n"
             inc_text += f"Description: {inconsistency.get('description', 'N/A')}\n"
             
-            # Affected policies
+            # Affected policies (compact)
             if vendor == 'fortinet':
                 affected_policies = inconsistency.get('affected_fortinet_policies', [])
                 if affected_policies:
-                    inc_text += f"Affected Fortinet Policies: {', '.join(str(p) for p in affected_policies)}\n"
+                    # Limit to first 5 policies to save tokens
+                    policy_list = ', '.join(str(p) for p in affected_policies[:5])
+                    if len(affected_policies) > 5:
+                        policy_list += f" (+{len(affected_policies)-5} more)"
+                    inc_text += f"Affected Policies: {policy_list}\n"
             elif vendor == 'zscaler':
                 affected_policies = inconsistency.get('affected_zscaler_policies', [])
                 if affected_policies:
-                    inc_text += f"Affected Zscaler Policies: {', '.join(str(p) for p in affected_policies)}\n"
+                    policy_list = ', '.join(str(p) for p in affected_policies[:5])
+                    if len(affected_policies) > 5:
+                        policy_list += f" (+{len(affected_policies)-5} more)"
+                    inc_text += f"Affected Policies: {policy_list}\n"
             
-            # Affected user groups
+            # Affected user groups (compact)
             affected_groups = inconsistency.get('affected_user_groups', [])
             if affected_groups:
-                inc_text += f"Affected User Groups: {', '.join(str(g) for g in affected_groups)}\n"
+                group_list = ', '.join(str(g) for g in affected_groups[:5])
+                if len(affected_groups) > 5:
+                    group_list += f" (+{len(affected_groups)-5} more)"
+                inc_text += f"Affected Groups: {group_list}\n"
             
-            # Root cause
+            # Root cause (concise)
             root_cause = inconsistency.get('root_cause', '')
             if root_cause:
-                inc_text += f"Root Cause: {root_cause}\n"
+                inc_text += f"Root Cause: {root_cause[:200]}{'...' if len(root_cause) > 200 else ''}\n"
             
-            # Business impact
+            # Business impact (concise)
             business_impact = inconsistency.get('business_impact', '')
             if business_impact:
-                inc_text += f"Business Impact: {business_impact}\n"
+                inc_text += f"Business Impact: {business_impact[:200]}{'...' if len(business_impact) > 200 else ''}\n"
             
-            # Current recommendation
+            # Current recommendation (concise)
             recommendation = inconsistency.get('recommendation', '')
             if recommendation:
-                inc_text += f"Current Recommendation: {recommendation}\n"
+                inc_text += f"Recommendation: {recommendation[:200]}{'...' if len(recommendation) > 200 else ''}\n"
             
-            # Remediation steps
+            # Remediation steps (first 3 only to save tokens)
             remediation_steps = inconsistency.get('remediation_steps', [])
             if remediation_steps:
-                inc_text += f"Remediation Steps: {len(remediation_steps)} steps provided\n"
-                for step_idx, step in enumerate(remediation_steps, 1):
-                    inc_text += f"  {step_idx}. {step}\n"
+                inc_text += f"Remediation Steps ({len(remediation_steps)} total):\n"
+                for step_idx, step in enumerate(remediation_steps[:3], 1):
+                    inc_text += f"  {step_idx}. {step[:150]}{'...' if len(step) > 150 else ''}\n"
+                if len(remediation_steps) > 3:
+                    inc_text += f"  ... and {len(remediation_steps)-3} more steps\n"
             
-            # Evidence
+            # Evidence (compact - only key fields)
             evidence = inconsistency.get('evidence', {})
             if evidence:
-                inc_text += f"Evidence: {json.dumps(evidence, indent=2)}\n"
+                # Only include key evidence fields to save tokens
+                key_evidence = {}
+                for key in ['policy1', 'policy2', 'policy_name', 'group', 'duplicate_ids']:
+                    if key in evidence:
+                        key_evidence[key] = evidence[key]
+                if key_evidence:
+                    inc_text += f"Evidence: {json.dumps(key_evidence)}\n"
             
             # Confidence score
             confidence = inconsistency.get('confidence_score', 0.0)
-            inc_text += f"Confidence Score: {confidence:.2f}\n"
+            inc_text += f"Confidence: {confidence:.2f}\n"
             
             formatted.append(inc_text)
         
