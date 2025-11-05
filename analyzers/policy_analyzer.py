@@ -40,6 +40,7 @@ class PolicyAnalyzer(BaseAnalyzer):
         # Initialize AI analyzer if enabled
         self.use_ai = use_ai
         logger.info(f"Initializing AI analyzer: use_ai={use_ai}, api_key_provided={openai_api_key is not None}")
+        
         if self.use_ai:
             try:
                 logger.debug(f"Creating AIInconsistencyAnalyzer with model: {openai_model}")
@@ -47,16 +48,17 @@ class PolicyAnalyzer(BaseAnalyzer):
                     api_key=openai_api_key,
                     model=openai_model
                 )
-                if openai_api_key:
+                
+                # Check if the AI analyzer has a valid client (API key was found)
+                if hasattr(self.ai_analyzer, 'client') and self.ai_analyzer.client:
                     logger.info(f"AI analyzer initialized successfully with model: {openai_model}")
-                    if hasattr(self.ai_analyzer, 'client') and self.ai_analyzer.client:
-                        logger.info("OpenAI client is ready for AI analysis")
-                    else:
-                        logger.warning("OpenAI client is not available. AI analysis will be disabled.")
-                        self.use_ai = False
+                    logger.info("OpenAI client is ready for AI analysis")
+                    self.use_ai = True  # Ensure use_ai is True if client is available
                 else:
-                    logger.warning("AI analyzer initialized but API key not found. AI analysis will be disabled.")
+                    logger.warning("OpenAI client is not available. AI analysis will be disabled.")
+                    logger.warning("This usually means OPENAI_API_KEY environment variable is not set.")
                     self.use_ai = False
+                    # Keep the analyzer object but mark it as disabled
             except Exception as e:
                 logger.error(f"Failed to initialize AI analyzer: {str(e)}")
                 import traceback
@@ -98,7 +100,14 @@ class PolicyAnalyzer(BaseAnalyzer):
             # AI-powered analysis
             ai_results = {}
             logger.info(f"AI analysis check: use_ai={self.use_ai}, ai_analyzer exists={self.ai_analyzer is not None}")
-            if self.use_ai and self.ai_analyzer:
+            
+            # Check if AI analyzer has a valid client
+            has_valid_client = False
+            if self.ai_analyzer and hasattr(self.ai_analyzer, 'client'):
+                has_valid_client = self.ai_analyzer.client is not None
+                logger.info(f"AI analyzer client status: {has_valid_client}")
+            
+            if self.use_ai and self.ai_analyzer and has_valid_client:
                 try:
                     logger.info("Running AI-powered analysis")
                     ai_results = self.ai_analyzer.analyze_with_ai(config)
@@ -114,14 +123,20 @@ class PolicyAnalyzer(BaseAnalyzer):
                         }
                     }
             else:
+                reasons = []
                 if not self.use_ai:
-                    logger.warning("AI analysis is disabled (use_ai=False)")
+                    reasons.append("use_ai=False")
                 if not self.ai_analyzer:
-                    logger.warning("AI analyzer is not available (ai_analyzer is None)")
+                    reasons.append("ai_analyzer=None")
+                elif not has_valid_client:
+                    reasons.append("client not available (API key missing)")
+                
+                logger.warning(f"AI analysis skipped: {', '.join(reasons)}")
                 ai_results = {
                     "ai_analysis": {
                         "enabled": False,
-                        "message": f"AI analysis not available (use_ai={self.use_ai}, ai_analyzer={self.ai_analyzer is not None})"
+                        "message": f"AI analysis not available: {', '.join(reasons)}",
+                        "hint": "Set OPENAI_API_KEY environment variable to enable AI analysis"
                     }
                 }
             
