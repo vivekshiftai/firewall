@@ -550,20 +550,24 @@ Return your analysis in the JSON format specified in the system prompt."""
         
         logger.info(f"Analyzing {len(inconsistencies)} inconsistencies with AI (model: {self.model})")
         
-        # Determine batch size based on model context limits
-        # GPT-5: ~128k tokens, GPT-4o: ~128k tokens, GPT-3.5-turbo: ~16k tokens
-        # Estimate ~200-300 tokens per inconsistency, so batch accordingly
-        if self.model == "gpt-5" or self.model == "gpt-4o":
-            batch_size = 30  # Conservative batch size for GPT-5/4o (can handle 50+, but use 30 to be safe)
-            max_tokens_per_batch = 100000  # Conservative limit
+        # For GPT-5, send ALL inconsistencies at once - GPT-5 has 128k token context window
+        # For other models, use batching if needed
+        if self.model == "gpt-5":
+            # GPT-5 has 128k token context window - can handle all inconsistencies at once
+            logger.info(f"GPT-5 detected (128k context window): Sending all {len(inconsistencies)} inconsistencies in one request")
+            # No batching for GPT-5 - it will handle everything with its 128k context
+        elif self.model == "gpt-4o":
+            # GPT-4o can also handle large batches, but use batching as safety measure
+            batch_size = 100  # Large batch size for GPT-4o
+            if force_batch or len(inconsistencies) > batch_size:
+                logger.info(f"Batching {len(inconsistencies)} inconsistencies into batches of {batch_size} for GPT-4o")
+                return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
         else:
-            batch_size = 5  # Small batches for models with smaller context (gpt-3.5-turbo)
-            max_tokens_per_batch = 10000  # Conservative limit for gpt-3.5-turbo
-        
-        # Batch inconsistencies if there are too many (or if forced)
-        if force_batch or len(inconsistencies) > batch_size:
-            logger.info(f"Batching {len(inconsistencies)} inconsistencies into batches of {batch_size} for analysis")
-            return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+            # Other models (like gpt-3.5-turbo) need smaller batches
+            batch_size = 5
+            if force_batch or len(inconsistencies) > batch_size:
+                logger.info(f"Batching {len(inconsistencies)} inconsistencies into batches of {batch_size} for {self.model}")
+                return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
         
         try:
             # Format inconsistencies for AI analysis
@@ -597,10 +601,11 @@ Return your analysis in the JSON format specified in the system prompt."""
                     error_str = str(model_error)
                     # Check if it's a context length error
                     if "context_length" in error_str.lower() or "maximum context length" in error_str.lower():
-                        logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with GPT-5")
-                        logger.info(f"Automatically batching {len(inconsistencies)} inconsistencies to handle context limit")
-                        # Automatically batch if context length is exceeded
-                        batch_size = 30
+                        # Even GPT-5's 128k context has limits - if we hit it, batch is needed
+                        logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with GPT-5 (128k limit)")
+                        logger.info(f"GPT-5 128k context limit reached - batching {len(inconsistencies)} inconsistencies into smaller batches")
+                        # Use very large batches for GPT-5 even when batching (128k tokens is huge)
+                        batch_size = 500  # Very large batches for GPT-5 (128k context allows ~500+ inconsistencies)
                         return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
                     # If GPT-5 API is not available, try to use gpt-4o as fallback
                     # But first log the error and try to use GPT-5 with chat completions API as alternative
@@ -683,10 +688,12 @@ Return your analysis in the JSON format specified in the system prompt."""
                         logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with model {self.model}")
                         logger.info(f"Automatically batching {len(inconsistencies)} inconsistencies to handle context limit")
                         # Automatically batch if context length is exceeded
-                        if self.model == "gpt-5" or self.model == "gpt-4o":
-                            batch_size = 30
+                        if self.model == "gpt-5":
+                            batch_size = 500  # Very large batches for GPT-5 (128k context window)
+                        elif self.model == "gpt-4o":
+                            batch_size = 50  # Medium batches for GPT-4o (128k context)
                         else:
-                            batch_size = 5
+                            batch_size = 5  # Small batches for other models (16k context)
                         return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
                     else:
                         raise  # Re-raise if it's not a context length error
@@ -720,7 +727,7 @@ Return your analysis in the JSON format specified in the system prompt."""
     def _format_inconsistencies_for_ai(self, inconsistencies: List[Dict[str, Any]], vendor: str) -> str:
         """
         Format inconsistencies into a readable text format for AI analysis.
-        Uses compact format to reduce token count.
+        For GPT-5, includes full details. For other models, uses compact format.
         
         Args:
             inconsistencies: List of inconsistency dictionaries
@@ -737,65 +744,50 @@ Return your analysis in the JSON format specified in the system prompt."""
             inc_text += f"Severity: {inconsistency.get('severity', 'MEDIUM')}\n"
             inc_text += f"Description: {inconsistency.get('description', 'N/A')}\n"
             
-            # Affected policies (compact)
+            # Affected policies - include all for GPT-5 (no truncation needed)
             if vendor == 'fortinet':
                 affected_policies = inconsistency.get('affected_fortinet_policies', [])
                 if affected_policies:
-                    # Limit to first 5 policies to save tokens
-                    policy_list = ', '.join(str(p) for p in affected_policies[:5])
-                    if len(affected_policies) > 5:
-                        policy_list += f" (+{len(affected_policies)-5} more)"
-                    inc_text += f"Affected Policies: {policy_list}\n"
+                    policy_list = ', '.join(str(p) for p in affected_policies)
+                    inc_text += f"Affected Fortinet Policies ({len(affected_policies)}): {policy_list}\n"
             elif vendor == 'zscaler':
                 affected_policies = inconsistency.get('affected_zscaler_policies', [])
                 if affected_policies:
-                    policy_list = ', '.join(str(p) for p in affected_policies[:5])
-                    if len(affected_policies) > 5:
-                        policy_list += f" (+{len(affected_policies)-5} more)"
-                    inc_text += f"Affected Policies: {policy_list}\n"
+                    policy_list = ', '.join(str(p) for p in affected_policies)
+                    inc_text += f"Affected Zscaler Policies ({len(affected_policies)}): {policy_list}\n"
             
-            # Affected user groups (compact)
+            # Affected user groups - include all for GPT-5
             affected_groups = inconsistency.get('affected_user_groups', [])
             if affected_groups:
-                group_list = ', '.join(str(g) for g in affected_groups[:5])
-                if len(affected_groups) > 5:
-                    group_list += f" (+{len(affected_groups)-5} more)"
-                inc_text += f"Affected Groups: {group_list}\n"
+                group_list = ', '.join(str(g) for g in affected_groups)
+                inc_text += f"Affected User Groups ({len(affected_groups)}): {group_list}\n"
             
-            # Root cause (concise)
+            # Root cause - include full text for GPT-5
             root_cause = inconsistency.get('root_cause', '')
             if root_cause:
-                inc_text += f"Root Cause: {root_cause[:200]}{'...' if len(root_cause) > 200 else ''}\n"
+                inc_text += f"Root Cause: {root_cause}\n"
             
-            # Business impact (concise)
+            # Business impact - include full text for GPT-5
             business_impact = inconsistency.get('business_impact', '')
             if business_impact:
-                inc_text += f"Business Impact: {business_impact[:200]}{'...' if len(business_impact) > 200 else ''}\n"
+                inc_text += f"Business Impact: {business_impact}\n"
             
-            # Current recommendation (concise)
+            # Current recommendation - include full text for GPT-5
             recommendation = inconsistency.get('recommendation', '')
             if recommendation:
-                inc_text += f"Recommendation: {recommendation[:200]}{'...' if len(recommendation) > 200 else ''}\n"
+                inc_text += f"Current Recommendation: {recommendation}\n"
             
-            # Remediation steps (first 3 only to save tokens)
+            # Remediation steps - include all for GPT-5
             remediation_steps = inconsistency.get('remediation_steps', [])
             if remediation_steps:
                 inc_text += f"Remediation Steps ({len(remediation_steps)} total):\n"
-                for step_idx, step in enumerate(remediation_steps[:3], 1):
-                    inc_text += f"  {step_idx}. {step[:150]}{'...' if len(step) > 150 else ''}\n"
-                if len(remediation_steps) > 3:
-                    inc_text += f"  ... and {len(remediation_steps)-3} more steps\n"
+                for step_idx, step in enumerate(remediation_steps, 1):
+                    inc_text += f"  {step_idx}. {step}\n"
             
-            # Evidence (compact - only key fields)
+            # Evidence - include full evidence for GPT-5
             evidence = inconsistency.get('evidence', {})
             if evidence:
-                # Only include key evidence fields to save tokens
-                key_evidence = {}
-                for key in ['policy1', 'policy2', 'policy_name', 'group', 'duplicate_ids']:
-                    if key in evidence:
-                        key_evidence[key] = evidence[key]
-                if key_evidence:
-                    inc_text += f"Evidence: {json.dumps(key_evidence)}\n"
+                inc_text += f"Evidence: {json.dumps(evidence, indent=2)}\n"
             
             # Confidence score
             confidence = inconsistency.get('confidence_score', 0.0)
@@ -808,6 +800,8 @@ Return your analysis in the JSON format specified in the system prompt."""
     def _get_inconsistency_system_prompt(self) -> str:
         """Get the system prompt for AI inconsistency analysis."""
         return """You are an expert firewall policy analyst with 20+ years of experience in network security, firewall management, and security policy analysis. Your expertise covers Fortinet FortiGate, Zscaler, and other major firewall platforms.
+
+You have access to a 128k token context window, allowing you to analyze large numbers of inconsistencies comprehensively in a single analysis.
 
 Your task is to analyze firewall policy inconsistencies that have been detected by automated rule-based checks. For each inconsistency, you need to provide:
 
@@ -899,29 +893,47 @@ IMPORTANT:
         Returns:
             Complete prompt string
         """
-        prompt = f"""Analyze the following {count} firewall policy inconsistencies detected in a {vendor.upper()} firewall configuration.
+        prompt = f"""You are analyzing ALL {count} firewall policy inconsistencies detected in a {vendor.upper()} firewall configuration.
 
-These inconsistencies were detected by automated rule-based analysis. Your task is to provide deep technical analysis for each one, including:
+**IMPORTANT**: You are analyzing ALL {count} inconsistencies together in one comprehensive analysis. This allows you to:
+- Identify patterns and relationships between inconsistencies
+- Prioritize based on cross-cutting concerns
+- Provide comprehensive recommendations that address multiple issues
+- Understand the overall security posture and systemic issues
 
-1. **Type Analysis**: More detailed classification of the inconsistency type
-2. **Severity Assessment**: Assess the severity with detailed justification
-3. **Root Cause Analysis**: Deep technical analysis of WHY this occurred
-4. **Solution Strategy**: Detailed, actionable steps on HOW to resolve it
-
-For each inconsistency, provide:
-- Detailed type classification and explanation
-- Severity assessment with justification
-- Root cause analysis (technical details)
-- Step-by-step solution with verification
-- Priority ranking
-
-Inconsistencies to Analyze:
+**INCONSISTENCIES TO ANALYZE**:
 {inconsistencies_text}
 
-Please analyze each inconsistency thoroughly and provide structured analysis as specified in the system prompt. Focus on:
-- Technical accuracy
-- Actionable solutions
-- Real-world firewall management scenarios
+**YOUR TASK**:
+For EACH of the {count} inconsistencies above, provide detailed analysis including:
+
+1. **Type Classification**: Precise category and detailed type with explanation
+2. **Severity Assessment**: CRITICAL/HIGH/MEDIUM/LOW with detailed justification
+3. **Root Cause Analysis**: Deep technical analysis of WHY this occurred
+4. **Solution Strategy**: Step-by-step resolution with verification
+
+**SPECIAL CONSIDERATIONS**:
+- Look for patterns across inconsistencies (e.g., multiple policies missing UTM, same user groups affected, recurring configuration issues)
+- Prioritize inconsistencies that affect security or compliance
+- Consider dependencies between inconsistencies
+- Provide actionable, specific solutions with commands/config examples where applicable
+- Assess business and security impact for each
+- Include verification steps for each solution
+
+**FOCUS AREAS**:
+- Security implications (exposure, data leakage, access control)
+- Business impact (operational disruption, compliance violations)
+- Compliance issues (regulatory requirements, audit trails)
+- Operational risks (performance, maintenance complexity)
+- Logical issues (contradictions, overlaps, missing information)
+- Coverage gaps (missing security controls, incomplete protection)
+
+**OUTPUT REQUIREMENTS**:
+- Analyze ALL {count} inconsistencies - each must have a corresponding entry in the "analyzed_inconsistencies" array
+- Be thorough, technical, and provide comprehensive analysis for each inconsistency
+- Provide structured analysis as specified in the system prompt
+- Focus on technical accuracy and actionable solutions
+- Consider real-world firewall management scenarios
 - Security and business impact
 - Verification methods
 
