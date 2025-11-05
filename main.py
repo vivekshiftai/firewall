@@ -1,0 +1,58 @@
+import logging
+from fastapi import FastAPI
+from app.routes.api import router as api_router
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+app = FastAPI(
+    title="Cross-Firewall Policy Analysis Engine",
+    description="Analyze and compare firewall policies across vendors for compliance and consistency",
+    version="1.0.0"
+)
+
+# Include API routes
+app.include_router(api_router)
+
+@app.get("/")
+async def root():
+    return {"message": "Cross-Firewall Policy Analysis Engine"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+@app.get("/api/v1/vendors")
+async def get_supported_vendors():
+    """Get list of supported vendors and their version info."""
+    return {
+        "vendors": [
+            {
+                "name": "fortinet",
+                "versions": ["6.0", "6.2", "6.4", "7.0"],
+                "description": "Fortinet FortiGate firewalls"
+            },
+            {
+                "name": "zscaler",
+                "versions": ["20.8", "20.9", "21.1", "21.2"],
+                "description": "Zscaler Cloud Security Platform"
+            },
+            {
+                "name": "cisco",
+                "versions": ["9.2", "9.3", "9.4", "9.5"],
+                "description": "Cisco ASA/FTD firewalls (planned)"
+            },
+            {
+                "name": "paloalto",
+                "versions": ["9.0", "9.1", "10.0", "10.1"],
+                "description": "Palo Alto Networks firewalls (planned)"
+            }
+        ]
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
