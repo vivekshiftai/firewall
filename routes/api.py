@@ -114,12 +114,16 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
         analysis_results = analyzer.analyze_single_firewall(firewall_config)
         logger.info("Inconsistency analysis completed successfully")
         
-        # Extract rule-based and AI analysis results
+        # Extract analysis results
+        summary = analysis_results.get("summary", {})
+        inconsistencies = analysis_results.get("inconsistencies", [])
         rule_based = analysis_results.get("rule_based_analysis", {})
         ai_analysis = analysis_results.get("ai_analysis", {})
         
-        # Combine parsed config summary with analysis results
+        # Format response in the requested structure
         response = {
+            "summary": summary,
+            "inconsistencies": inconsistencies,
             "firewall_config": {
                 "id": firewall_config.id,
                 "vendor": firewall_config.vendor,
@@ -127,20 +131,21 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
                 "total_policies": len(firewall_config.policies),
                 "total_objects": len(firewall_config.objects or [])
             },
-            "analysis": {
+            "additional_analysis": {
                 "rule_based": rule_based,
                 "ai_powered": ai_analysis
             }
         }
         
         # Log summary
-        conflicts_count = len(rule_based.get("conflicts", []))
-        redundancies_count = len(rule_based.get("redundancies", []))
-        gaps_count = len(rule_based.get("coverage_gaps", []))
+        total_inconsistencies = summary.get("total_inconsistencies", 0)
+        high_severity = summary.get("high_severity", 0)
+        medium_severity = summary.get("medium_severity", 0)
+        low_severity = summary.get("low_severity", 0)
         ai_findings_count = len(ai_analysis.get("findings", [])) if ai_analysis.get("enabled") else 0
         
-        logger.info(f"Analysis complete. Rule-based: {conflicts_count} conflicts, "
-                   f"{redundancies_count} redundancies, {gaps_count} coverage gaps. "
+        logger.info(f"Analysis complete. Total inconsistencies: {total_inconsistencies} "
+                   f"(HIGH: {high_severity}, MEDIUM: {medium_severity}, LOW: {low_severity}). "
                    f"AI analysis: {ai_findings_count} findings")
         
         return response

@@ -86,16 +86,40 @@ class PolicyAnalyzer(BaseAnalyzer):
         """
         logger.info(f"Starting single firewall analysis for {config.vendor} firewall ID: {config.id}")
         try:
-            # Rule-based analysis
-            logger.debug("Running rule-based analysis")
+            # Rule-based analysis - Run all 8 detection engines
+            logger.debug("Running comprehensive rule-based analysis")
+            
+            # Engine 1: Contradictory Rules
             conflicts = self._check_policy_conflicts(config)
-            logger.info(f"Found {len(conflicts)} policy conflicts")
+            logger.info(f"[1/8] Found {len(conflicts)} policy conflicts")
             
+            # Engine 2: Duplicate Policies
             redundancies = self._check_redundant_policies(config)
-            logger.info(f"Found {len(redundancies)} redundant policies")
+            logger.info(f"[2/8] Found {len(redundancies)} redundant policies")
             
+            # Engine 3: Overly Permissive Rules
             gaps = self._check_coverage_gaps(config)
-            logger.info(f"Found {len(gaps)} coverage gaps")
+            logger.info(f"[3/8] Found {len(gaps)} coverage gaps")
+            
+            # Engine 4: UTM Profile Inconsistency
+            utm_issues = self._check_utm_profiles(config)
+            logger.info(f"[4/8] Found {len(utm_issues)} UTM profile issues")
+            
+            # Engine 5: User Group Consistency (single firewall - check for group references)
+            user_group_issues = self._check_user_group_consistency(config)
+            logger.info(f"[5/8] Found {len(user_group_issues)} user group issues")
+            
+            # Engine 6: DLP Coverage Gaps (single firewall - check for missing DLP)
+            dlp_issues = self._check_dlp_coverage_gaps_single(config)
+            logger.info(f"[6/8] Found {len(dlp_issues)} DLP coverage gaps")
+            
+            # Engine 7: Application Access Gaps
+            app_issues = self._check_application_access_gaps_single(config)
+            logger.info(f"[7/8] Found {len(app_issues)} application access gaps")
+            
+            # Engine 8: Missing Security Coverage
+            security_issues = self._check_missing_security_coverage(config)
+            logger.info(f"[8/8] Found {len(security_issues)} missing security coverage issues")
             
             # AI-powered analysis
             ai_results = {}
@@ -140,11 +164,92 @@ class PolicyAnalyzer(BaseAnalyzer):
                     }
                 }
             
-            # Combine results
+            # Convert to standardized inconsistency format
+            all_inconsistencies = []
+            
+            # Add conflicts
+            for conflict in conflicts:
+                all_inconsistencies.append({
+                    "type": "Contradictory Rule",
+                    "severity": conflict.get("severity", "HIGH"),
+                    "description": conflict.get("description", ""),
+                    "fortinet_policy": conflict.get("policy_a", {}).get("name", ""),
+                    "zscaler_policy": "N/A",
+                    "affected_groups": self._extract_groups_from_policy(conflict.get("policy_a", {}), config),
+                    "recommendation": conflict.get("recommendation", ""),
+                    "details": {
+                        "policy_a": conflict.get("policy_a", {}),
+                        "policy_b": conflict.get("policy_b", {})
+                    }
+                })
+            
+            # Add redundancies
+            for redundancy in redundancies:
+                all_inconsistencies.append({
+                    "type": "Duplicate Policy",
+                    "severity": redundancy.get("severity", "MEDIUM"),
+                    "description": redundancy.get("description", ""),
+                    "fortinet_policy": redundancy.get("policy_a", {}).get("name", ""),
+                    "zscaler_policy": "N/A",
+                    "affected_groups": self._extract_groups_from_policy(redundancy.get("policy_a", {}), config),
+                    "recommendation": redundancy.get("recommendation", ""),
+                    "details": {
+                        "policy_a": redundancy.get("policy_a", {}),
+                        "policy_b": redundancy.get("policy_b", {})
+                    }
+                })
+            
+            # Add coverage gaps
+            for gap in gaps:
+                inconsistency_type = "Overly Permissive Rule"
+                if gap.get("type") == "overly_permissive_destination":
+                    inconsistency_type = "Overly Permissive Destination"
+                elif gap.get("type") == "overly_permissive_source":
+                    inconsistency_type = "Overly Permissive Source"
+                
+                all_inconsistencies.append({
+                    "type": inconsistency_type,
+                    "severity": gap.get("severity", "HIGH"),
+                    "description": gap.get("description", ""),
+                    "fortinet_policy": gap.get("policy_name", ""),
+                    "zscaler_policy": "N/A",
+                    "affected_groups": self._extract_groups_from_policy_id(gap.get("policy_id", ""), config),
+                    "recommendation": gap.get("recommendation", ""),
+                    "details": {
+                        "policy_id": gap.get("policy_id", ""),
+                        "policy_name": gap.get("policy_name", "")
+                    }
+                })
+            
+            # Add all detection engine results
+            all_inconsistencies.extend(utm_issues)
+            all_inconsistencies.extend(user_group_issues)
+            all_inconsistencies.extend(dlp_issues)
+            all_inconsistencies.extend(app_issues)
+            all_inconsistencies.extend(security_issues)
+            
+            # Add AI findings if available
+            if ai_results.get("ai_analysis", {}).get("enabled"):
+                ai_findings = ai_results["ai_analysis"].get("findings", [])
+                logger.info(f"Adding {len(ai_findings)} AI findings to inconsistencies")
+                all_inconsistencies.extend(ai_findings)
+            
+            # Count by severity
+            high_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "HIGH")
+            medium_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "MEDIUM")
+            low_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "LOW")
+            
+            # Format results in the requested structure
+            from datetime import datetime
             results = {
-                "firewall_id": config.id,
-                "vendor": config.vendor,
-                "total_policies": len(config.policies),
+                "summary": {
+                    "total_inconsistencies": len(all_inconsistencies),
+                    "high_severity": high_severity,
+                    "medium_severity": medium_severity,
+                    "low_severity": low_severity,
+                    "analysis_timestamp": datetime.now().isoformat()
+                },
+                "inconsistencies": all_inconsistencies,
                 "rule_based_analysis": {
                     "conflicts": conflicts,
                     "redundancies": redundancies,
@@ -154,6 +259,7 @@ class PolicyAnalyzer(BaseAnalyzer):
                 **ai_results  # Include AI analysis results
             }
             
+            logger.info(f"Analysis complete: {len(all_inconsistencies)} inconsistencies found ({high_severity} HIGH, {medium_severity} MEDIUM, {low_severity} LOW)")
             logger.info("Single firewall analysis completed successfully")
             return results
         except Exception as e:
@@ -552,3 +658,323 @@ class PolicyAnalyzer(BaseAnalyzer):
     def _identify_missing_policies(self, config: FirewallConfig, standards: List[str]) -> List[Dict[str, Any]]:
         """Identify missing policies for compliance standards."""
         return []
+    
+    def _check_utm_profiles(self, config: FirewallConfig) -> List[Dict[str, Any]]:
+        """
+        Check for UTM profile inconsistencies (policies without AV, IPS, Web Filter).
+        
+        Args:
+            config: Firewall configuration to analyze
+            
+        Returns:
+            List of UTM profile inconsistencies
+        """
+        utm_issues = []
+        
+        for policy in config.policies:
+            # Check if policy allows internet access
+            dst = policy.get("destination_addresses", []) or policy.get("destination_zones", [])
+            action = str(policy.get("action", "")).lower()
+            
+            # Check if it's an internet-facing policy
+            if action in ["accept", "allow"] and ("all" in dst or any("internet" in str(d).lower() for d in dst)):
+                # Check for UTM profiles
+                has_utm = policy.get("utm-status", False) or policy.get("utm_enabled", False)
+                has_av = bool(policy.get("av-profile") or policy.get("av_profile"))
+                has_ips = bool(policy.get("ips-sensor") or policy.get("ips_sensor"))
+                has_webfilter = bool(policy.get("webfilter-profile") or policy.get("webfilter_profile"))
+                
+                if not has_utm or not (has_av or has_ips or has_webfilter):
+                    utm_issues.append({
+                        "type": "UTM Profile Inconsistency",
+                        "severity": "HIGH",
+                        "description": f"Policy allows internet access without UTM protection",
+                        "fortinet_policy": policy.get("name", policy.get("id", "")),
+                        "zscaler_policy": "N/A",
+                        "affected_groups": self._extract_groups_from_policy(policy, config),
+                        "recommendation": "Enable UTM profiles (AV, IPS, Web Filtering) on this policy",
+                        "details": {
+                            "policy_id": policy.get("id", ""),
+                            "has_utm": has_utm,
+                            "has_av": has_av,
+                            "has_ips": has_ips,
+                            "has_webfilter": has_webfilter
+                        }
+                    })
+        
+        return utm_issues
+    
+    def _extract_groups_from_policy(self, policy: Dict[str, Any], config: FirewallConfig) -> List[str]:
+        """
+        Extract user groups from a policy.
+        
+        Args:
+            policy: Policy dictionary
+            config: Firewall configuration
+            
+        Returns:
+            List of group names
+        """
+        groups = []
+        
+        # Check for groups field
+        if "groups" in policy:
+            groups_str = policy["groups"]
+            if isinstance(groups_str, str):
+                # Handle Fortinet format: "Group1\" \"Group2"
+                if "\\\"" in groups_str:
+                    groups = [g.strip().strip('"') for g in groups_str.split('\\"') if g.strip()]
+                elif " " in groups_str:
+                    groups = [g.strip() for g in groups_str.split() if g.strip()]
+                else:
+                    groups = [groups_str]
+            elif isinstance(groups_str, list):
+                groups = groups_str
+        
+        # Check for group-name or group_name
+        if not groups and "group-name" in policy:
+            groups = [policy["group-name"]]
+        if not groups and "group_name" in policy:
+            groups = [policy["group_name"]]
+        
+        return groups
+    
+    def _extract_groups_from_policy_id(self, policy_id: str, config: FirewallConfig) -> List[str]:
+        """
+        Extract user groups from a policy by ID.
+        
+        Args:
+            policy_id: Policy ID
+            config: Firewall configuration
+            
+        Returns:
+            List of group names
+        """
+        for policy in config.policies:
+            if str(policy.get("id", "")) == str(policy_id):
+                return self._extract_groups_from_policy(policy, config)
+        return []
+    
+    def _check_user_group_consistency(self, config: FirewallConfig) -> List[Dict[str, Any]]:
+        """
+        Check user group consistency within a single firewall.
+        Engine 5: User Group Consistency Analysis
+        
+        Args:
+            config: Firewall configuration to analyze
+            
+        Returns:
+            List of user group inconsistencies
+        """
+        issues = []
+        groups_found = set()
+        groups_referenced = set()
+        
+        # Extract all groups from policies
+        for policy in config.policies:
+            groups = self._extract_groups_from_policy(policy, config)
+            for group in groups:
+                groups_found.add(group)
+                groups_referenced.add(group)
+        
+        # Check for policies with groups that might be inconsistent
+        # (e.g., same group with conflicting access patterns)
+        group_policies = {}
+        for policy in config.policies:
+            groups = self._extract_groups_from_policy(policy, config)
+            for group in groups:
+                if group not in group_policies:
+                    group_policies[group] = []
+                group_policies[group].append({
+                    "policy_id": policy.get("id", ""),
+                    "policy_name": policy.get("name", ""),
+                    "action": policy.get("action", ""),
+                    "destinations": policy.get("destination_addresses", []) or policy.get("destination_zones", [])
+                })
+        
+        # Check for groups with conflicting access patterns
+        for group, policies in group_policies.items():
+            actions = set(p.get("action", "").lower() for p in policies)
+            if "accept" in actions and "deny" in actions:
+                # Check if they're for the same destination
+                destinations = set()
+                for p in policies:
+                    destinations.update(p.get("destinations", []))
+                
+                if len(destinations) == 1 and "all" in destinations:
+                    issues.append({
+                        "type": "User Group Inconsistency",
+                        "severity": "MEDIUM",
+                        "description": f"Group '{group}' has conflicting access patterns (accept and deny for same destination)",
+                        "fortinet_policy": f"Multiple policies",
+                        "zscaler_policy": "N/A",
+                        "affected_groups": [group],
+                        "recommendation": "Review policies for group and ensure consistent access control",
+                        "details": {
+                            "group": group,
+                            "policies": [p["policy_name"] for p in policies]
+                        }
+                    })
+        
+        return issues
+    
+    def _check_dlp_coverage_gaps_single(self, config: FirewallConfig) -> List[Dict[str, Any]]:
+        """
+        Check for DLP coverage gaps within a single firewall.
+        Engine 6: DLP Coverage Gap Analysis
+        
+        Args:
+            config: Firewall configuration to analyze
+            
+        Returns:
+            List of DLP coverage gaps
+        """
+        issues = []
+        
+        # Groups that have DLP enabled
+        groups_with_dlp = set()
+        groups_without_dlp = set()
+        
+        for policy in config.policies:
+            groups = self._extract_groups_from_policy(policy, config)
+            has_dlp = bool(policy.get("dlp-sensor") or policy.get("dlp_sensor"))
+            
+            for group in groups:
+                if has_dlp:
+                    groups_with_dlp.add(group)
+                else:
+                    # Check if this is a sensitive data policy
+                    dest = policy.get("destination_addresses", []) or policy.get("destination_zones", [])
+                    action = str(policy.get("action", "")).lower()
+                    
+                    # If policy allows internet access or sensitive services, should have DLP
+                    if (action in ["accept", "allow"] and 
+                        ("all" in dest or any("internet" in str(d).lower() for d in dest))):
+                        groups_without_dlp.add(group)
+        
+        # Find groups that should have DLP but don't
+        missing_dlp_groups = groups_without_dlp - groups_with_dlp
+        
+        # Find policies that handle sensitive data but lack DLP
+        for policy in config.policies:
+            groups = self._extract_groups_from_policy(policy, config)
+            has_dlp = bool(policy.get("dlp-sensor") or policy.get("dlp_sensor"))
+            dest = policy.get("destination_addresses", []) or policy.get("destination_zones", [])
+            action = str(policy.get("action", "")).lower()
+            
+            # Check if this is a sensitive policy that should have DLP
+            if (action in ["accept", "allow"] and 
+                not has_dlp and
+                ("all" in dest or any("internet" in str(d).lower() for d in dest))):
+                
+                # Check if policy handles sensitive data (based on comments or name)
+                policy_name = policy.get("name", "").lower()
+                comments = policy.get("comments", "").lower()
+                is_sensitive = any(keyword in policy_name or keyword in comments 
+                                 for keyword in ["customer", "data", "financial", "pii", "sensitive", "crm", "sales"])
+                
+                if is_sensitive or any(g in missing_dlp_groups for g in groups):
+                    issues.append({
+                        "type": "DLP Coverage Gap",
+                        "severity": "HIGH",
+                        "description": f"Groups have DLP in Fortinet but not in Zscaler" if config.vendor == "fortinet" else f"Policy handles sensitive data but lacks DLP protection",
+                        "fortinet_policy": policy.get("name", policy.get("id", "")),
+                        "zscaler_policy": "Missing",
+                        "affected_groups": [g for g in groups if g in missing_dlp_groups] or groups or [],
+                        "recommendation": "Implement DLP policies for these groups",
+                        "details": {
+                            "missing_groups": list(missing_dlp_groups) if missing_dlp_groups else groups,
+                            "policy_id": policy.get("id", "")
+                        }
+                    })
+        
+        return issues
+    
+    def _check_application_access_gaps_single(self, config: FirewallConfig) -> List[Dict[str, Any]]:
+        """
+        Check for application access gaps within a single firewall.
+        Engine 7: Application Access Gap Verification
+        
+        Args:
+            config: Firewall configuration to analyze
+            
+        Returns:
+            List of application access gaps
+        """
+        issues = []
+        
+        # Check for policies allowing application access without proper controls
+        for policy in config.policies:
+            action = str(policy.get("action", "")).lower()
+            services = policy.get("services", [])
+            groups = self._extract_groups_from_policy(policy, config)
+            
+            # Check if policy allows broad application access
+            if action in ["accept", "allow"]:
+                # Check for missing application controls
+                has_app_control = bool(policy.get("application-list") or policy.get("application_list"))
+                
+                # Check if services include application protocols
+                app_protocols = ["HTTP", "HTTPS", "FTP", "SSH", "RDP", "SMB", "LDAP", "DNS"]
+                has_app_protocols = any(any(proto in str(svc).upper() for proto in app_protocols) for svc in services)
+                
+                if has_app_protocols and not has_app_control:
+                    issues.append({
+                        "type": "Application Access Gap",
+                        "severity": "MEDIUM",
+                        "description": f"Policy allows application access without application control",
+                        "fortinet_policy": policy.get("name", policy.get("id", "")),
+                        "zscaler_policy": "N/A",
+                        "affected_groups": groups,
+                        "recommendation": "Enable application control or application list on this policy",
+                        "details": {
+                            "policy_id": policy.get("id", ""),
+                            "services": services,
+                            "has_app_control": has_app_control
+                        }
+                    })
+        
+        return issues
+    
+    def _check_missing_security_coverage(self, config: FirewallConfig) -> List[Dict[str, Any]]:
+        """
+        Check for missing security coverage.
+        Engine 8: Missing Security Coverage Detection
+        
+        Args:
+            config: Firewall configuration to analyze
+            
+        Returns:
+            List of missing security coverage issues
+        """
+        issues = []
+        
+        for policy in config.policies:
+            action = str(policy.get("action", "")).lower()
+            dest = policy.get("destination_addresses", []) or policy.get("destination_zones", [])
+            groups = self._extract_groups_from_policy(policy, config)
+            
+            # Check for internet access policies missing URL filtering
+            if action in ["accept", "allow"] and ("all" in dest or any("internet" in str(d).lower() for d in dest)):
+                has_webfilter = bool(policy.get("webfilter-profile") or policy.get("webfilter_profile"))
+                
+                if not has_webfilter:
+                    issues.append({
+                        "type": "Missing Security Coverage",
+                        "severity": "HIGH",
+                        "description": f"Group has internet access in Fortinet but no URL filtering in Zscaler",
+                        "fortinet_policy": policy.get("name", policy.get("id", "")),
+                        "zscaler_policy": "None",
+                        "affected_groups": groups,
+                        "recommendation": "Create Zscaler URL filtering policy for this group",
+                        "details": {
+                            "fortinet": {
+                                "policy": policy.get("name", ""),
+                                "utm_enabled": policy.get("utm-status", False),
+                                "av_profile": policy.get("av-profile"),
+                                "ips_sensor": policy.get("ips-sensor")
+                            }
+                        }
+                    })
+        
+        return issues

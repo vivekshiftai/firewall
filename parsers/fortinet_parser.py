@@ -149,6 +149,35 @@ class FortinetParser(BaseParser):
                     "schedule": fortinet_policy.schedule,
                     "comments": getattr(fortinet_policy, "comments", "")
                 }
+                
+                # Extract additional fields from original policy data
+                original_policy = policy_data
+                
+                # Add groups if present
+                if "groups" in original_policy:
+                    standardized_policy["groups"] = original_policy["groups"]
+                elif "group-name" in original_policy:
+                    standardized_policy["groups"] = original_policy["group-name"]
+                
+                # Add UTM profiles if present
+                if "utm-status" in original_policy:
+                    standardized_policy["utm-status"] = original_policy["utm-status"]
+                if "av-profile" in original_policy:
+                    standardized_policy["av-profile"] = original_policy["av-profile"]
+                if "ips-sensor" in original_policy:
+                    standardized_policy["ips-sensor"] = original_policy["ips-sensor"]
+                if "webfilter-profile" in original_policy:
+                    standardized_policy["webfilter-profile"] = original_policy["webfilter-profile"]
+                if "dlp-sensor" in original_policy:
+                    standardized_policy["dlp-sensor"] = original_policy["dlp-sensor"]
+                if "application-list" in original_policy:
+                    standardized_policy["application-list"] = original_policy["application-list"]
+                if "ssl-ssh-profile" in original_policy:
+                    standardized_policy["ssl-ssh-profile"] = original_policy["ssl-ssh-profile"]
+                if "nat" in original_policy:
+                    standardized_policy["nat"] = original_policy["nat"]
+                if "logtraffic" in original_policy:
+                    standardized_policy["logtraffic"] = original_policy["logtraffic"]
                 policies.append(standardized_policy)
                 logger.debug(f"Policy {i+1} parsed successfully")
             except Exception as e:

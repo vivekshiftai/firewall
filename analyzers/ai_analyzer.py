@@ -91,11 +91,29 @@ class AIInconsistencyAnalyzer:
             ai_response = json.loads(response.choices[0].message.content)
             logger.info("AI analysis completed successfully")
             
+            # Convert AI findings to inconsistency format
+            ai_findings = ai_response.get("findings", [])
+            logger.info(f"AI found {len(ai_findings)} issues")
+            
+            # Format AI findings to match the inconsistency structure
+            formatted_findings = []
+            for finding in ai_findings:
+                formatted_findings.append({
+                    "type": finding.get("type", "Unknown"),
+                    "severity": finding.get("severity", "MEDIUM"),
+                    "description": finding.get("description", ""),
+                    "fortinet_policy": finding.get("fortinet_policy", "Unknown"),
+                    "zscaler_policy": finding.get("zscaler_policy", "N/A"),
+                    "affected_groups": finding.get("affected_groups", []),
+                    "recommendation": finding.get("recommendation", ""),
+                    "details": finding.get("details", {})
+                })
+            
             return {
                 "ai_analysis": {
                     "enabled": True,
                     "model": self.model,
-                    "findings": ai_response.get("findings", []),
+                    "findings": formatted_findings,
                     "summary": ai_response.get("summary", ""),
                     "recommendations": ai_response.get("recommendations", []),
                     "risk_assessment": ai_response.get("risk_assessment", {})
@@ -131,33 +149,71 @@ class AIInconsistencyAnalyzer:
             policy_text += f"  Services: {', '.join(policy.get('services', []))}\n"
             policy_text += f"  Action: {policy.get('action', 'N/A')}\n"
             policy_text += f"  Enabled: {policy.get('enabled', True)}\n"
+            
+            # Add groups/user information
+            groups = policy.get('groups', [])
+            if groups:
+                if isinstance(groups, str):
+                    policy_text += f"  Groups: {groups}\n"
+                else:
+                    policy_text += f"  Groups: {', '.join(str(g) for g in groups)}\n"
+            
+            # Add UTM profile information
+            utm_status = policy.get('utm-status', False) or policy.get('utm_enabled', False)
+            policy_text += f"  UTM Enabled: {utm_status}\n"
+            if policy.get('av-profile') or policy.get('av_profile'):
+                policy_text += f"  AV Profile: {policy.get('av-profile') or policy.get('av_profile')}\n"
+            if policy.get('ips-sensor') or policy.get('ips_sensor'):
+                policy_text += f"  IPS Sensor: {policy.get('ips-sensor') or policy.get('ips_sensor')}\n"
+            if policy.get('webfilter-profile') or policy.get('webfilter_profile'):
+                policy_text += f"  Web Filter Profile: {policy.get('webfilter-profile') or policy.get('webfilter_profile')}\n"
+            if policy.get('dlp-sensor') or policy.get('dlp_sensor'):
+                policy_text += f"  DLP Sensor: {policy.get('dlp-sensor') or policy.get('dlp_sensor')}\n"
+            
+            # Add NAT information
+            if policy.get('nat'):
+                policy_text += f"  NAT: {policy.get('nat')}\n"
+            
+            # Add logging
+            if policy.get('logtraffic') or policy.get('log_traffic'):
+                policy_text += f"  Log Traffic: {policy.get('logtraffic') or policy.get('log_traffic')}\n"
+            
             if policy.get('comments'):
                 policy_text += f"  Comments: {policy.get('comments')}\n"
+            
             formatted.append(policy_text)
         
         return "\n".join(formatted)
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for AI analysis."""
-        return """You are an expert firewall policy analyst. Your task is to analyze firewall policies and identify inconsistencies, conflicts, redundancies, and security issues.
+        return """You are an expert firewall policy analyst specializing in Fortinet and Zscaler security platforms. Your task is to analyze firewall policies and identify 8 types of inconsistencies:
 
-Analyze the provided firewall policies and identify:
-1. **Conflicts**: Policies that overlap but have conflicting actions (e.g., one allows and one denies the same traffic)
-2. **Redundancies**: Duplicate or identical policies that serve the same purpose
-3. **Security Gaps**: Overly permissive policies (e.g., allowing traffic from/to "all")
-4. **Logical Issues**: Policies that don't make sense or have missing required fields
-5. **Coverage Gaps**: Missing security controls or incomplete policy coverage
+1. **Contradictory Rule**: Policies that overlap but have conflicting actions (e.g., one allows and one denies the same traffic)
+2. **Duplicate Policy**: Duplicate or identical policies that serve the same purpose
+3. **Overly Permissive Rule**: Policies allowing "ALL" sources/destinations/services (violates least-privilege)
+4. **UTM Profile Inconsistency**: Internet-facing policies without UTM protection (AV, IPS, Web Filter)
+5. **Missing Security Coverage**: Policies that lack appropriate security controls
+6. **DLP Coverage Gap**: Groups with DLP in policies but missing DLP enforcement
+7. **User Group Inconsistency**: Policies referencing groups that may not exist or are inconsistent
+8. **Application Access Gap**: Policies allowing application access without proper controls
 
-Return your analysis as a JSON object with this structure:
+Return your analysis as a JSON object with this EXACT structure:
 {
   "summary": "Brief summary of findings",
   "findings": [
     {
-      "type": "conflict|redundancy|security_gap|logical_issue|coverage_gap",
+      "type": "Contradictory Rule|Duplicate Policy|Overly Permissive Rule|UTM Profile Inconsistency|Missing Security Coverage|DLP Coverage Gap|User Group Inconsistency|Application Access Gap",
       "severity": "HIGH|MEDIUM|LOW",
-      "policy_ids": ["policy_id1", "policy_id2"],
       "description": "Detailed description of the issue",
-      "recommendation": "How to fix this issue"
+      "fortinet_policy": "Policy name or ID",
+      "zscaler_policy": "N/A (for single firewall) or policy name",
+      "affected_groups": ["Group1", "Group2"],
+      "recommendation": "How to fix this issue",
+      "details": {
+        "policy_id": "policy_id",
+        "additional_info": "any relevant details"
+      }
     }
   ],
   "recommendations": [
@@ -171,7 +227,14 @@ Return your analysis as a JSON object with this structure:
     "medium_issues": 0,
     "low_issues": 0
   }
-}"""
+}
+
+IMPORTANT: 
+- Use the EXACT type names listed above
+- Always include "affected_groups" array (extract from policy groups field)
+- Set "zscaler_policy" to "N/A" for single firewall analysis
+- Include specific policy names/IDs in "fortinet_policy" field
+- Provide actionable recommendations"""
     
     def _create_analysis_prompt(self, config: FirewallConfig, policies_text: str) -> str:
         """
