@@ -39,14 +39,14 @@ except Exception as e:
 class AIInconsistencyAnalyzer:
     """AI-powered analyzer for detecting firewall policy inconsistencies using OpenAI GPT."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-5"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o"):
         """
         Initialize the AI analyzer.
         
         Args:
             api_key: OpenAI API key (if None, will try to get from OPENAI_API_KEY env var)
-            model: OpenAI model to use (default: gpt-5, can use gpt-4o, gpt-4-turbo, gpt-3.5-turbo)
-                   GPT-5 uses responses.create() API, other models use chat.completions.create()
+            model: OpenAI model to use (default: gpt-4o, can use gpt-4-turbo, gpt-3.5-turbo)
+                   All models use chat.completions.create() API
         """
         logger.info("Initializing AI Inconsistency Analyzer")
         
@@ -58,7 +58,7 @@ class AIInconsistencyAnalyzer:
             logger.warning("OpenAI API key not found in environment variables or parameter")
             logger.warning("Make sure OPENAI_API_KEY is set in .env file or environment")
         
-        # Set model - default to GPT-5, but allow override via parameter or env var
+        # Set model - default to GPT-4o, but allow override via parameter or env var
         env_model = os.getenv("OPENAI_MODEL")
         if env_model:
             logger.info(f"Found OPENAI_MODEL in environment: {env_model}")
@@ -66,7 +66,7 @@ class AIInconsistencyAnalyzer:
         elif model:
             self.model = model
         else:
-            self.model = "gpt-5"  # Default to GPT-5
+            self.model = "gpt-4o"  # Default to GPT-4o
         
         logger.info(f"Using OpenAI model: {self.model}")
         
@@ -84,7 +84,7 @@ class AIInconsistencyAnalyzer:
         self._token_encoder = None
         if TIKTOKEN_AVAILABLE:
             try:
-                # Use cl100k_base encoding (used by GPT-4, GPT-3.5, and GPT-5)
+                # Use cl100k_base encoding (used by GPT-4, GPT-4o, GPT-3.5)
                 self._token_encoder = tiktoken.get_encoding("cl100k_base")
                 logger.info("Token counting enabled (tiktoken)")
             except Exception as e:
@@ -158,7 +158,7 @@ class AIInconsistencyAnalyzer:
                     if hasattr(usage, 'total_tokens'):
                         total_tokens = usage.total_tokens
                 elif hasattr(response, 'output_text'):
-                    # For GPT-5 responses.create() API
+                    # For responses.create() API (if used)
                     output_tokens = self._count_tokens(response.output_text)
                     total_tokens = input_tokens + output_tokens
                 elif hasattr(response, 'choices') and len(response.choices) > 0:
@@ -185,7 +185,7 @@ class AIInconsistencyAnalyzer:
         if output_tokens > 0:
             logger.info(f"  Output tokens: {output_tokens:,}")
         logger.info(f"  Total tokens: {total_tokens:,}")
-        if self.model == "gpt-5":
+        if self.model == "gpt-4o":
             remaining_context = 128000 - total_tokens
             logger.info(f"  Remaining context (128k limit): {remaining_context:,} tokens ({remaining_context/128000*100:.1f}% available)")
     
@@ -288,192 +288,52 @@ class AIInconsistencyAnalyzer:
             # Call OpenAI API
             logger.debug(f"Sending request to OpenAI API using {self.model}")
             
-            # Use GPT-5 API structure if using GPT-5, otherwise use chat completions API
-            if self.model == "gpt-5":
-                try:
-                    # GPT-5 uses responses.create() with different structure
-                    logger.info("Using GPT-5 API (responses.create)")
-                    combined_prompt = f"{self._get_system_prompt()}\n\n{prompt}"
-                    
-                    # Use retry mechanism with 3 minute timeout
-                    def call_gpt5_responses_analyze():
-                        return self.client.responses.create(
-                            model="gpt-5",
-                            input=combined_prompt,
-                            reasoning={"effort": "high"},  # High effort for detailed analysis
-                            text={"verbosity": "high"}  # High verbosity for comprehensive responses
-                        )
-                    
-                    # Log token usage before sending
-                    logger.info(f"Counting tokens for GPT-5 analyze_with_ai request...")
-                    self._log_token_usage(combined_prompt, None, "GPT-5 responses.create() (analyze_with_ai) (input)")
-                    
-                    response = self._retry_with_timeout(
-                        call_gpt5_responses_analyze,
-                        max_retries=3,
-                        timeout_seconds=180,  # 3 minutes timeout
-                        retry_delay=180,  # Wait 3 minutes before retry
-                        operation_name="GPT-5 responses.create() (analyze_with_ai)"
-                    )
-                    
-                    # Log token usage after receiving response
-                    self._log_token_usage(combined_prompt, response, "GPT-5 responses.create() (analyze_with_ai)")
-                    
-                    # GPT-5 returns output_text directly
-                    response_text = response.output_text
-                    ai_response = json.loads(response_text)
-                    
-                except Exception as model_error:
-                    # If GPT-5 responses.create() API is not available, try GPT-5 with chat completions
-                    logger.warning(f"GPT-5 responses.create() API not available ({str(model_error)})")
-                    logger.info("Attempting to use GPT-5 with chat completions API instead...")
-                    
-                    try:
-                        # Try GPT-5 with chat completions API
-                        def call_gpt5_chat_analyze():
-                            return self.client.chat.completions.create(
-                                model="gpt-5",
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": self._get_system_prompt()
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": prompt
-                                    }
-                                ],
-                                temperature=0.3,
-                                response_format={"type": "json_object"}
-                            )
-                        
-                        # Prepare messages for token counting
-                        messages_analyze = [
-                            {
-                                "role": "system",
-                                "content": self._get_system_prompt()
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ]
-                        
-                        # Log token usage before sending
-                        logger.info(f"Counting tokens for GPT-5 chat completions (analyze_with_ai) request...")
-                        self._log_token_usage(messages_analyze, None, "GPT-5 chat completions (analyze_with_ai) (input)")
-                        
-                        response = self._retry_with_timeout(
-                            call_gpt5_chat_analyze,
-                            max_retries=3,
-                            timeout_seconds=180,  # 3 minutes timeout
-                            retry_delay=180,  # Wait 3 minutes before retry
-                            operation_name="GPT-5 chat completions (analyze_with_ai)"
-                        )
-                        
-                        # Log token usage after receiving response
-                        self._log_token_usage(messages_analyze, response, "GPT-5 chat completions (analyze_with_ai)")
-                        
-                        ai_response = json.loads(response.choices[0].message.content)
-                        logger.info("Successfully used GPT-5 with chat completions API")
-                    except Exception as gpt5_chat_error:
-                        # If GPT-5 with chat completions also fails, fallback to gpt-4o as last resort
-                        logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
-                        logger.warning("Falling back to gpt-4o as last resort")
-                        self.model = "gpt-4o"
-                        
-                        def call_gpt4o_fallback():
-                            return self.client.chat.completions.create(
-                                model=self.model,
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": self._get_system_prompt()
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": prompt
-                                    }
-                                ],
-                                temperature=0.3,
-                                response_format={"type": "json_object"}
-                            )
-                        
-                        # Prepare messages for token counting
-                        messages_fallback_analyze = [
-                            {
-                                "role": "system",
-                                "content": self._get_system_prompt()
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ]
-                        
-                        # Log token usage before sending
-                        logger.info(f"Counting tokens for GPT-4o fallback (analyze_with_ai) request...")
-                        self._log_token_usage(messages_fallback_analyze, None, "GPT-4o fallback (analyze_with_ai) (input)")
-                        
-                        response = self._retry_with_timeout(
-                            call_gpt4o_fallback,
-                            max_retries=3,
-                            timeout_seconds=180,  # 3 minutes timeout
-                            retry_delay=180,  # Wait 3 minutes before retry
-                            operation_name="GPT-4o fallback (analyze_with_ai)"
-                        )
-                        
-                        # Log token usage after receiving response
-                        self._log_token_usage(messages_fallback_analyze, response, "GPT-4o fallback (analyze_with_ai)")
-                        
-                        ai_response = json.loads(response.choices[0].message.content)
-            else:
-                # Use standard chat completions API for other models
-                def call_chat_completions_analyze():
-                    return self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": self._get_system_prompt()
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        temperature=0.3,
-                        response_format={"type": "json_object"}
-                    )
-                
-                # Prepare messages for token counting
-                messages_analyze_other = [
-                    {
-                        "role": "system",
-                        "content": self._get_system_prompt()
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-                
-                # Log token usage before sending
-                logger.info(f"Counting tokens for {self.model} chat completions (analyze_with_ai) request...")
-                self._log_token_usage(messages_analyze_other, None, f"Chat completions ({self.model}) (analyze_with_ai) (input)")
-                
-                response = self._retry_with_timeout(
-                    call_chat_completions_analyze,
-                    max_retries=3,
-                    timeout_seconds=180,  # 3 minutes timeout
-                    retry_delay=180,  # Wait 3 minutes before retry
-                    operation_name=f"Chat completions ({self.model}) (analyze_with_ai)"
+            # Use chat completions API for all models (GPT-4o, GPT-4-turbo, etc.)
+            def call_chat_completions_analyze():
+                return self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": self._get_system_prompt()
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.3,
+                    response_format={"type": "json_object"}
                 )
-                
-                # Log token usage after receiving response
-                self._log_token_usage(messages_analyze_other, response, f"Chat completions ({self.model}) (analyze_with_ai)")
-                
-                ai_response = json.loads(response.choices[0].message.content)
+            
+            # Prepare messages for token counting
+            messages_analyze = [
+                {
+                    "role": "system",
+                    "content": self._get_system_prompt()
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+            
+            # Log token usage before sending
+            logger.info(f"Counting tokens for {self.model} chat completions (analyze_with_ai) request...")
+            self._log_token_usage(messages_analyze, None, f"Chat completions ({self.model}) (analyze_with_ai) (input)")
+            
+            response = self._retry_with_timeout(
+                call_chat_completions_analyze,
+                max_retries=3,
+                timeout_seconds=180,  # 3 minutes timeout
+                retry_delay=180,  # Wait 3 minutes before retry
+                operation_name=f"Chat completions ({self.model}) (analyze_with_ai)"
+            )
+            
+            # Log token usage after receiving response
+            self._log_token_usage(messages_analyze, response, f"Chat completions ({self.model}) (analyze_with_ai)")
+            
+            ai_response = json.loads(response.choices[0].message.content)
             logger.info("AI analysis completed successfully")
             
             # Convert AI findings to inconsistency format
@@ -836,18 +696,12 @@ Return your analysis in the JSON format specified in the system prompt."""
         
         logger.info(f"Analyzing {len(inconsistencies)} inconsistencies with AI (model: {self.model})")
         
-        # For GPT-5, send ALL inconsistencies at once - GPT-5 has 128k token context window
+        # For GPT-4o, send ALL inconsistencies at once - GPT-4o has 128k token context window
         # For other models, use batching if needed
-        if self.model == "gpt-5":
-            # GPT-5 has 128k token context window - can handle all inconsistencies at once
-            logger.info(f"GPT-5 detected (128k context window): Sending all {len(inconsistencies)} inconsistencies in one request")
-            # No batching for GPT-5 - it will handle everything with its 128k context
-        elif self.model == "gpt-4o":
-            # GPT-4o can also handle large batches, but use batching as safety measure
-            batch_size = 100  # Large batch size for GPT-4o
-            if force_batch or len(inconsistencies) > batch_size:
-                logger.info(f"Batching {len(inconsistencies)} inconsistencies into batches of {batch_size} for GPT-4o")
-                return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+        if self.model == "gpt-4o":
+            # GPT-4o has 128k token context window - can handle all inconsistencies at once
+            logger.info(f"GPT-4o detected (128k context window): Sending all {len(inconsistencies)} inconsistencies in one request")
+            # No batching for GPT-4o - it will handle everything with its 128k context
         else:
             # Other models (like gpt-3.5-turbo) need smaller batches
             batch_size = 5
@@ -865,77 +719,12 @@ Return your analysis in the JSON format specified in the system prompt."""
             # Call OpenAI API
             logger.debug(f"Sending {len(inconsistencies)} inconsistencies to OpenAI API for analysis using {self.model}")
             
-            # Use GPT-5 API structure if using GPT-5, otherwise use chat completions API
-            if self.model == "gpt-5":
-                try:
-                    # GPT-5 uses responses.create() with different structure
-                    logger.info("Using GPT-5 API (responses.create)")
-                    combined_prompt = f"{self._get_inconsistency_system_prompt()}\n\n{prompt}"
-                    
-                    # Use retry mechanism with 3 minute timeout
-                    def call_gpt5_responses():
-                        return self.client.responses.create(
-                            model="gpt-5",
-                            input=combined_prompt,
-                            reasoning={"effort": "high"},  # High effort for detailed analysis
-                            text={"verbosity": "high"}  # High verbosity for comprehensive responses
-                        )
-                    
-                    # Log token usage before sending
-                    logger.info(f"Counting tokens for GPT-5 request...")
-                    self._log_token_usage(combined_prompt, None, "GPT-5 responses.create() (input)")
-                    
-                    response = self._retry_with_timeout(
-                        call_gpt5_responses,
-                        max_retries=3,
-                        timeout_seconds=180,  # 3 minutes timeout
-                        retry_delay=180,  # Wait 3 minutes before retry
-                        operation_name="GPT-5 responses.create()"
-                    )
-                    
-                    # Log token usage after receiving response
-                    self._log_token_usage(combined_prompt, response, "GPT-5 responses.create()")
-                    
-                    # GPT-5 returns output_text directly
-                    response_text = response.output_text
-                    ai_response = json.loads(response_text)
-                    
-                except Exception as model_error:
-                    error_str = str(model_error)
-                    # Check if it's a context length error
-                    if "context_length" in error_str.lower() or "maximum context length" in error_str.lower():
-                        # Even GPT-5's 128k context has limits - if we hit it, batch is needed
-                        logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with GPT-5 (128k limit)")
-                        logger.info(f"GPT-5 128k context limit reached - batching {len(inconsistencies)} inconsistencies into smaller batches")
-                        # Use very large batches for GPT-5 even when batching (128k tokens is huge)
-                        batch_size = 500  # Very large batches for GPT-5 (128k context allows ~500+ inconsistencies)
-                        return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
-                    # If GPT-5 API is not available, try to use gpt-4o as fallback
-                    # But first log the error and try to use GPT-5 with chat completions API as alternative
-                    logger.warning(f"GPT-5 responses.create() API not available ({str(model_error)})")
-                    logger.info("Attempting to use GPT-5 with chat completions API instead...")
-                    
-                    # Try GPT-5 with chat completions API (some OpenAI clients might support this)
-                    try:
-                        def call_gpt5_chat():
-                            return self.client.chat.completions.create(
-                                model="gpt-5",  # Try GPT-5 with chat completions
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": self._get_inconsistency_system_prompt()
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": prompt
-                                    }
-                                ],
-                                temperature=0.2,
-                                response_format={"type": "json_object"}
-                            )
-                        
-                        # Prepare messages for token counting
-                        messages = [
+            # Use chat completions API for all models (GPT-4o, GPT-4-turbo, etc.)
+            try:
+                def call_chat_completions():
+                    return self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
                             {
                                 "role": "system",
                                 "content": self._get_inconsistency_system_prompt()
@@ -944,149 +733,53 @@ Return your analysis in the JSON format specified in the system prompt."""
                                 "role": "user",
                                 "content": prompt
                             }
-                        ]
-                        
-                        # Log token usage before sending
-                        logger.info(f"Counting tokens for GPT-5 chat completions request...")
-                        self._log_token_usage(messages, None, "GPT-5 chat completions (input)")
-                        
-                        response = self._retry_with_timeout(
-                            call_gpt5_chat,
-                            max_retries=3,
-                            timeout_seconds=180,  # 3 minutes timeout
-                            retry_delay=180,  # Wait 3 minutes before retry
-                            operation_name="GPT-5 chat completions"
-                        )
-                        
-                        # Log token usage after receiving response
-                        self._log_token_usage(messages, response, "GPT-5 chat completions")
-                        
-                        ai_response = json.loads(response.choices[0].message.content)
-                        logger.info("Successfully used GPT-5 with chat completions API")
-                    except Exception as gpt5_chat_error:
-                        # If GPT-5 with chat completions also fails, fallback to gpt-4o as last resort
-                        logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
-                        logger.warning("Falling back to gpt-4o as last resort")
-                        self.model = "gpt-4o"
-                        try:
-                            def call_gpt4o_fallback_inconsistencies():
-                                return self.client.chat.completions.create(
-                                    model=self.model,
-                                    messages=[
-                                        {
-                                            "role": "system",
-                                            "content": self._get_inconsistency_system_prompt()
-                                        },
-                                        {
-                                            "role": "user",
-                                            "content": prompt
-                                        }
-                                    ],
-                                    temperature=0.2,
-                                    response_format={"type": "json_object"}
-                                )
-                            
-                            # Prepare messages for token counting
-                            messages_fallback_inconsistencies = [
-                                {
-                                    "role": "system",
-                                    "content": self._get_inconsistency_system_prompt()
-                                },
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ]
-                            
-                            # Log token usage before sending
-                            logger.info(f"Counting tokens for GPT-4o fallback (analyze_inconsistencies) request...")
-                            self._log_token_usage(messages_fallback_inconsistencies, None, "GPT-4o fallback (analyze_inconsistencies) (input)")
-                            
-                            response = self._retry_with_timeout(
-                                call_gpt4o_fallback_inconsistencies,
-                                max_retries=3,
-                                timeout_seconds=180,  # 3 minutes timeout
-                                retry_delay=180,  # Wait 3 minutes before retry
-                                operation_name="GPT-4o fallback (analyze_inconsistencies)"
-                            )
-                            
-                            # Log token usage after receiving response
-                            self._log_token_usage(messages_fallback_inconsistencies, response, "GPT-4o fallback (analyze_inconsistencies)")
-                            
-                            ai_response = json.loads(response.choices[0].message.content)
-                        except Exception as fallback_error:
-                            error_str_fallback = str(fallback_error)
-                            # Check if fallback also has context length error
-                            if "context_length" in error_str_fallback.lower() or "maximum context length" in error_str_fallback.lower():
-                                logger.warning(f"Context length exceeded even with gpt-4o, batching {len(inconsistencies)} inconsistencies")
-                                batch_size = 30
-                                return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
-                            else:
-                                raise  # Re-raise if it's not a context length error
-            else:
-                # Use standard chat completions API for other models
-                try:
-                    def call_chat_completions():
-                        return self.client.chat.completions.create(
-                            model=self.model,
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": self._get_inconsistency_system_prompt()
-                                },
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ],
-                            temperature=0.2,
-                            response_format={"type": "json_object"}
-                        )
-                    
-                    # Prepare messages for token counting
-                    messages = [
-                        {
-                            "role": "system",
-                            "content": self._get_inconsistency_system_prompt()
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ]
-                    
-                    # Log token usage before sending
-                    logger.info(f"Counting tokens for {self.model} chat completions request...")
-                    self._log_token_usage(messages, None, f"Chat completions ({self.model}) (input)")
-                    
-                    response = self._retry_with_timeout(
-                        call_chat_completions,
-                        max_retries=3,
-                        timeout_seconds=180,  # 3 minutes timeout
-                        retry_delay=180,  # Wait 3 minutes before retry
-                        operation_name=f"Chat completions ({self.model})"
+                        ],
+                        temperature=0.2,
+                        response_format={"type": "json_object"}
                     )
-                    
-                    # Log token usage after receiving response
-                    self._log_token_usage(messages, response, f"Chat completions ({self.model})")
-                    
-                    ai_response = json.loads(response.choices[0].message.content)
-                except Exception as api_error:
-                    error_str = str(api_error)
-                    # Check if it's a context length error
-                    if "context_length" in error_str.lower() or "maximum context length" in error_str.lower():
-                        logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with model {self.model}")
-                        logger.info(f"Automatically batching {len(inconsistencies)} inconsistencies to handle context limit")
-                        # Automatically batch if context length is exceeded
-                        if self.model == "gpt-5":
-                            batch_size = 500  # Very large batches for GPT-5 (128k context window)
-                        elif self.model == "gpt-4o":
-                            batch_size = 50  # Medium batches for GPT-4o (128k context)
-                        else:
-                            batch_size = 5  # Small batches for other models (16k context)
-                        return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+                
+                # Prepare messages for token counting
+                messages = [
+                    {
+                        "role": "system",
+                        "content": self._get_inconsistency_system_prompt()
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+                
+                # Log token usage before sending
+                logger.info(f"Counting tokens for {self.model} chat completions request...")
+                self._log_token_usage(messages, None, f"Chat completions ({self.model}) (input)")
+                
+                response = self._retry_with_timeout(
+                    call_chat_completions,
+                    max_retries=3,
+                    timeout_seconds=180,  # 3 minutes timeout
+                    retry_delay=180,  # Wait 3 minutes before retry
+                    operation_name=f"Chat completions ({self.model})"
+                )
+                
+                # Log token usage after receiving response
+                self._log_token_usage(messages, response, f"Chat completions ({self.model})")
+                
+                ai_response = json.loads(response.choices[0].message.content)
+            except Exception as api_error:
+                error_str = str(api_error)
+                # Check if it's a context length error
+                if "context_length" in error_str.lower() or "maximum context length" in error_str.lower():
+                    logger.warning(f"Context length exceeded for {len(inconsistencies)} inconsistencies with model {self.model}")
+                    logger.info(f"Automatically batching {len(inconsistencies)} inconsistencies to handle context limit")
+                    # Automatically batch if context length is exceeded
+                    if self.model == "gpt-4o":
+                        batch_size = 500  # Very large batches for GPT-4o (128k context window)
                     else:
-                        raise  # Re-raise if it's not a context length error
+                        batch_size = 5  # Small batches for other models (16k context)
+                    return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+                else:
+                    raise  # Re-raise if it's not a context length error
             
             logger.info(f"AI analysis completed successfully. Analyzed {len(ai_response.get('analyzed_inconsistencies', []))} inconsistencies")
             
@@ -1117,7 +810,7 @@ Return your analysis in the JSON format specified in the system prompt."""
     def _format_inconsistencies_for_ai(self, inconsistencies: List[Dict[str, Any]], vendor: str) -> str:
         """
         Format inconsistencies into a readable text format for AI analysis.
-        For GPT-5, includes full details. For other models, uses compact format.
+        For GPT-4o, includes full details. For other models, uses compact format.
         
         Args:
             inconsistencies: List of inconsistency dictionaries
@@ -1134,7 +827,7 @@ Return your analysis in the JSON format specified in the system prompt."""
             inc_text += f"Severity: {inconsistency.get('severity', 'MEDIUM')}\n"
             inc_text += f"Description: {inconsistency.get('description', 'N/A')}\n"
             
-            # Affected policies - include all for GPT-5 (no truncation needed)
+            # Affected policies - include all for GPT-4o (no truncation needed)
             if vendor == 'fortinet':
                 affected_policies = inconsistency.get('affected_fortinet_policies', [])
                 if affected_policies:
@@ -1146,35 +839,35 @@ Return your analysis in the JSON format specified in the system prompt."""
                     policy_list = ', '.join(str(p) for p in affected_policies)
                     inc_text += f"Affected Zscaler Policies ({len(affected_policies)}): {policy_list}\n"
             
-            # Affected user groups - include all for GPT-5
+            # Affected user groups - include all for GPT-4o
             affected_groups = inconsistency.get('affected_user_groups', [])
             if affected_groups:
                 group_list = ', '.join(str(g) for g in affected_groups)
                 inc_text += f"Affected User Groups ({len(affected_groups)}): {group_list}\n"
             
-            # Root cause - include full text for GPT-5
+            # Root cause - include full text for GPT-4o
             root_cause = inconsistency.get('root_cause', '')
             if root_cause:
                 inc_text += f"Root Cause: {root_cause}\n"
             
-            # Business impact - include full text for GPT-5
+            # Business impact - include full text for GPT-4o
             business_impact = inconsistency.get('business_impact', '')
             if business_impact:
                 inc_text += f"Business Impact: {business_impact}\n"
             
-            # Current recommendation - include full text for GPT-5
+            # Current recommendation - include full text for GPT-4o
             recommendation = inconsistency.get('recommendation', '')
             if recommendation:
                 inc_text += f"Current Recommendation: {recommendation}\n"
             
-            # Remediation steps - include all for GPT-5
+            # Remediation steps - include all for GPT-4o
             remediation_steps = inconsistency.get('remediation_steps', [])
             if remediation_steps:
                 inc_text += f"Remediation Steps ({len(remediation_steps)} total):\n"
                 for step_idx, step in enumerate(remediation_steps, 1):
                     inc_text += f"  {step_idx}. {step}\n"
             
-            # Evidence - include full evidence for GPT-5
+            # Evidence - include full evidence for GPT-4o
             evidence = inconsistency.get('evidence', {})
             if evidence:
                 inc_text += f"Evidence: {json.dumps(evidence, indent=2)}\n"
@@ -1191,7 +884,7 @@ Return your analysis in the JSON format specified in the system prompt."""
         """Get the system prompt for AI inconsistency analysis."""
         return """You are an expert firewall policy analyst with 20+ years of experience in network security, firewall management, and security policy analysis. Your expertise covers Fortinet FortiGate, Zscaler, and other major firewall platforms.
 
-You have access to a 128k token context window, allowing you to analyze large numbers of inconsistencies comprehensively in a single analysis.
+You have access to a 128k token context window (GPT-4o), allowing you to analyze large numbers of inconsistencies comprehensively in a single analysis.
 
 Your task is to analyze firewall policy inconsistencies that have been detected by automated rule-based checks. For each inconsistency, you need to provide:
 

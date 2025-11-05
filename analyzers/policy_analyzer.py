@@ -44,7 +44,7 @@ class PolicyAnalyzer(BaseAnalyzer):
         Args:
             use_ai: Whether to use AI-powered analysis (default: True)
             openai_api_key: OpenAI API key (if None, will try to get from OPENAI_API_KEY env var)
-            openai_model: OpenAI model to use (if None, will try to get from OPENAI_MODEL env var, default: gpt-5)
+            openai_model: OpenAI model to use (if None, will try to get from OPENAI_MODEL env var, default: gpt-4o)
         """
         logger.info("Initializing PolicyAnalyzer")
         self.embedder = PolicyEmbedder()
@@ -60,21 +60,21 @@ class PolicyAnalyzer(BaseAnalyzer):
                 logger.warning("Make sure OPENAI_API_KEY is set in .env file or environment")
         
         # Get model from parameter or environment variable, with default
-        # Default to GPT-5 (best available)
+        # Default to GPT-4o (best available)
         if openai_model is None:
-            # Check environment variable first, default to gpt-5 if not set
+            # Check environment variable first, default to gpt-4o if not set
             env_model = os.getenv("OPENAI_MODEL")
             if env_model:
                 logger.info(f"Found OPENAI_MODEL in environment: {env_model}")
                 openai_model = env_model
             else:
-                openai_model = "gpt-5"  # Use GPT-5, fallback handled in AI analyzer
+                openai_model = "gpt-4o"  # Use GPT-4o, fallback handled in AI analyzer
                 logger.info(f"No OPENAI_MODEL in environment, defaulting to: {openai_model}")
         
-        # Ensure we never default to gpt-3.5-turbo - if somehow it's set, use gpt-5 instead
+        # Ensure we never default to gpt-3.5-turbo - if somehow it's set, use gpt-4o instead
         if openai_model == "gpt-3.5-turbo":
-            logger.warning(f"gpt-3.5-turbo detected, upgrading to gpt-5")
-            openai_model = "gpt-5"
+            logger.warning(f"gpt-3.5-turbo detected, upgrading to gpt-4o")
+            openai_model = "gpt-4o"
         
         logger.info(f"Using OpenAI model: {openai_model}")
         
@@ -198,7 +198,7 @@ class PolicyAnalyzer(BaseAnalyzer):
             # If using enhanced analyzer and have inconsistencies, send them to AI for detailed analysis
             if self.use_ai and self.ai_analyzer and has_valid_client and use_enhanced and all_inconsistencies:
                 try:
-                    logger.info(f"Running AI-powered analysis on {len(all_inconsistencies)} inconsistencies using GPT-5")
+                    logger.info(f"Running AI-powered analysis on {len(all_inconsistencies)} inconsistencies using {self.ai_analyzer.model}")
                     logger.info("Sending inconsistencies to AI for detailed type, severity, root cause, and solution analysis")
                     
                     # Convert inconsistencies to dict format for AI analysis
