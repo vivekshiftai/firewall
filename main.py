@@ -53,7 +53,10 @@ logger.info("Starting Cross-Firewall Policy Analysis Engine")
 app = FastAPI(
     title="Cross-Firewall Policy Analysis Engine",
     description="Analyze and compare firewall policies across vendors for compliance and consistency",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
 )
 
 # Add CORS middleware
