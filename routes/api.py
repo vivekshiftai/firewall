@@ -1,11 +1,13 @@
 """
 Main API routes for cross-firewall policy analysis.
 """
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from typing import List, Dict, Any
 import json
 import uuid
+import secrets
 
 from parsers.factory import ParserFactory
 from analyzers.policy_analyzer import PolicyAnalyzer
@@ -21,6 +23,35 @@ analyzer = PolicyAnalyzer()
 report_generator = JSONReportGenerator()
 visualizer = PolicyVisualizer()
 database = AnalysisDatabase()
+
+# Security
+security = HTTPBasic()
+
+# Simple user storage (in production, use a proper database)
+users = {
+    "admin": "password123",
+    "analyst": "analyst123"
+}
+
+def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
+    """Authenticate user credentials."""
+    username = credentials.username
+    password = credentials.password
+    
+    if username in users and secrets.compare_digest(password, users[username]):
+        return username
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+def optional_auth(credentials: HTTPBasicCredentials = None):
+    """Optional authentication for Swagger UI."""
+    # In a real implementation, you would validate credentials if provided
+    # For now, we'll just return None to indicate no authentication required
+    return None
 
 
 @router.post("/parse-config")
@@ -248,10 +279,10 @@ async def generate_visualization(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating visualization: {str(e)}")
 
-@router.get("/visualization-demo", response_class=HTMLResponse)
+@router.get("/visualization-demo")
 async def visualization_demo():
     """Demo page for visualizations."""
-    return """
+    return HTMLResponse(content="""
     <!DOCTYPE html>
     <html>
     <head>
@@ -310,12 +341,10 @@ async def visualization_demo():
                     
                     const response = await fetch('/api/v1/generate-visualization', {
                         method: 'POST',
-                        body: new FormData(Object.assign(document.createElement('form'), {
-                            innerHTML: `
-                                <input name="viz_type" value="policy_count">
-                                <input name="data" value='${JSON.stringify(data)}'>
-                            `
-                        }))
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: `viz_type=policy_count&data=${encodeURIComponent(JSON.stringify(data))}`
                     });
                     
                     const result = await response.json();
@@ -337,12 +366,10 @@ async def visualization_demo():
                     
                     const response = await fetch('/api/v1/generate-visualization', {
                         method: 'POST',
-                        body: new FormData(Object.assign(document.createElement('form'), {
-                            innerHTML: `
-                                <input name="viz_type" value="action_distribution">
-                                <input name="data" value='${JSON.stringify(data)}'>
-                            `
-                        }))
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: `viz_type=action_distribution&data=${encodeURIComponent(JSON.stringify(data))}`
                     });
                     
                     const result = await response.json();
@@ -352,7 +379,7 @@ async def visualization_demo():
         </div>
     </body>
     </html>
-    """
+    """)
 
 @router.get("/analysis/{analysis_id}")
 async def get_analysis_result(analysis_id: str) -> Dict[str, Any]:
@@ -360,7 +387,7 @@ async def get_analysis_result(analysis_id: str) -> Dict[str, Any]:
     Retrieve a saved analysis result.
     
     Args:
-        analysis_id: The analysis ID to retrieve
+        analysis_id: Analysis identifier
         
     Returns:
         Analysis result
@@ -376,7 +403,7 @@ async def get_comparison_result(comparison_id: str) -> Dict[str, Any]:
     Retrieve a saved comparison result.
     
     Args:
-        comparison_id: The comparison ID to retrieve
+        comparison_id: Comparison identifier
         
     Returns:
         Comparison result
@@ -392,7 +419,7 @@ async def get_compliance_result(compliance_id: str) -> Dict[str, Any]:
     Retrieve a saved compliance result.
     
     Args:
-        compliance_id: The compliance ID to retrieve
+        compliance_id: Compliance check identifier
         
     Returns:
         Compliance result

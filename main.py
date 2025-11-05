@@ -1,8 +1,10 @@
 import logging
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from routes.api import router as api_router
 import secrets
+from config import settings
 
 # Configure logging
 logging.basicConfig(
@@ -14,6 +16,15 @@ app = FastAPI(
     title="Cross-Firewall Policy Analysis Engine",
     description="Analyze and compare firewall policies across vendors for compliance and consistency",
     version="1.0.0"
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Security
@@ -39,8 +50,8 @@ def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
 
-# Include API routes with authentication
-app.include_router(api_router, dependencies=[Depends(authenticate_user)])
+# Include API routes
+app.include_router(api_router)
 
 @app.get("/")
 async def root():
@@ -51,7 +62,7 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.get("/api/v1/vendors")
-async def get_supported_vendors(username: str = Depends(authenticate_user)):
+async def get_supported_vendors():
     """Get list of supported vendors and their version info."""
     return {
         "vendors": [
