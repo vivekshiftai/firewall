@@ -60,7 +60,7 @@ class PolicyAnalyzer(BaseAnalyzer):
                 logger.warning("Make sure OPENAI_API_KEY is set in .env file or environment")
         
         # Get model from parameter or environment variable, with default
-        # Default to GPT-5 if specified, otherwise use gpt-4o (best available)
+        # Default to GPT-5 (best available)
         if openai_model is None:
             # Check environment variable first, default to gpt-5 if not set
             env_model = os.getenv("OPENAI_MODEL")
@@ -71,10 +71,10 @@ class PolicyAnalyzer(BaseAnalyzer):
                 openai_model = "gpt-5"  # Use GPT-5, fallback handled in AI analyzer
                 logger.info(f"No OPENAI_MODEL in environment, defaulting to: {openai_model}")
         
-        # Ensure we never default to gpt-3.5-turbo - if somehow it's set, use gpt-4o instead
+        # Ensure we never default to gpt-3.5-turbo - if somehow it's set, use gpt-5 instead
         if openai_model == "gpt-3.5-turbo":
-            logger.warning(f"gpt-3.5-turbo detected, upgrading to gpt-4o")
-            openai_model = "gpt-4o"
+            logger.warning(f"gpt-3.5-turbo detected, upgrading to gpt-5")
+            openai_model = "gpt-5"
         
         logger.info(f"Using OpenAI model: {openai_model}")
         

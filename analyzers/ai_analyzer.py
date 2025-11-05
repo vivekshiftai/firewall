@@ -126,25 +126,50 @@ class AIInconsistencyAnalyzer:
                     ai_response = json.loads(response_text)
                     
                 except Exception as model_error:
-                    # If GPT-5 API is not available, fallback to gpt-4o with chat completions
-                    logger.warning(f"GPT-5 API not available ({str(model_error)}), falling back to gpt-4o")
-                    self.model = "gpt-4o"
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": self._get_system_prompt()
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        temperature=0.3,
-                        response_format={"type": "json_object"}
-                    )
-                    ai_response = json.loads(response.choices[0].message.content)
+                    # If GPT-5 responses.create() API is not available, try GPT-5 with chat completions
+                    logger.warning(f"GPT-5 responses.create() API not available ({str(model_error)})")
+                    logger.info("Attempting to use GPT-5 with chat completions API instead...")
+                    
+                    try:
+                        # Try GPT-5 with chat completions API
+                        response = self.client.chat.completions.create(
+                            model="gpt-5",
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": self._get_system_prompt()
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            temperature=0.3,
+                            response_format={"type": "json_object"}
+                        )
+                        ai_response = json.loads(response.choices[0].message.content)
+                        logger.info("Successfully used GPT-5 with chat completions API")
+                    except Exception as gpt5_chat_error:
+                        # If GPT-5 with chat completions also fails, fallback to gpt-4o as last resort
+                        logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
+                        logger.warning("Falling back to gpt-4o as last resort")
+                        self.model = "gpt-4o"
+                        response = self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": self._get_system_prompt()
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            temperature=0.3,
+                            response_format={"type": "json_object"}
+                        )
+                        ai_response = json.loads(response.choices[0].message.content)
             else:
                 # Use standard chat completions API for other models
                 response = self.client.chat.completions.create(
@@ -577,12 +602,15 @@ Return your analysis in the JSON format specified in the system prompt."""
                         # Automatically batch if context length is exceeded
                         batch_size = 30
                         return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
-                    # If GPT-5 API is not available, fallback to gpt-4o with chat completions
-                    logger.warning(f"GPT-5 API not available ({str(model_error)}), falling back to gpt-4o")
-                    self.model = "gpt-4o"
+                    # If GPT-5 API is not available, try to use gpt-4o as fallback
+                    # But first log the error and try to use GPT-5 with chat completions API as alternative
+                    logger.warning(f"GPT-5 responses.create() API not available ({str(model_error)})")
+                    logger.info("Attempting to use GPT-5 with chat completions API instead...")
+                    
+                    # Try GPT-5 with chat completions API (some OpenAI clients might support this)
                     try:
                         response = self.client.chat.completions.create(
-                            model=self.model,
+                            model="gpt-5",  # Try GPT-5 with chat completions
                             messages=[
                                 {
                                     "role": "system",
@@ -597,15 +625,38 @@ Return your analysis in the JSON format specified in the system prompt."""
                             response_format={"type": "json_object"}
                         )
                         ai_response = json.loads(response.choices[0].message.content)
-                    except Exception as fallback_error:
-                        error_str_fallback = str(fallback_error)
-                        # Check if fallback also has context length error
-                        if "context_length" in error_str_fallback.lower() or "maximum context length" in error_str_fallback.lower():
-                            logger.warning(f"Context length exceeded even with gpt-4o, batching {len(inconsistencies)} inconsistencies")
-                            batch_size = 30
-                            return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
-                        else:
-                            raise  # Re-raise if it's not a context length error
+                        logger.info("Successfully used GPT-5 with chat completions API")
+                    except Exception as gpt5_chat_error:
+                        # If GPT-5 with chat completions also fails, fallback to gpt-4o as last resort
+                        logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
+                        logger.warning("Falling back to gpt-4o as last resort")
+                        self.model = "gpt-4o"
+                        try:
+                            response = self.client.chat.completions.create(
+                                model=self.model,
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": self._get_inconsistency_system_prompt()
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": prompt
+                                    }
+                                ],
+                                temperature=0.2,
+                                response_format={"type": "json_object"}
+                            )
+                            ai_response = json.loads(response.choices[0].message.content)
+                        except Exception as fallback_error:
+                            error_str_fallback = str(fallback_error)
+                            # Check if fallback also has context length error
+                            if "context_length" in error_str_fallback.lower() or "maximum context length" in error_str_fallback.lower():
+                                logger.warning(f"Context length exceeded even with gpt-4o, batching {len(inconsistencies)} inconsistencies")
+                                batch_size = 30
+                                return self._analyze_inconsistencies_batched(inconsistencies, vendor, batch_size)
+                            else:
+                                raise  # Re-raise if it's not a context length error
             else:
                 # Use standard chat completions API for other models
                 try:
