@@ -9,6 +9,7 @@ from models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
 from utils.embeddings import PolicyEmbedder
 from utils.mapping import SemanticMapper
 from analyzers.ai_analyzer import AIInconsistencyAnalyzer
+from analyzers.enhanced_policy_analyzer import EnhancedPolicyAnalyzer
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -73,53 +74,78 @@ class PolicyAnalyzer(BaseAnalyzer):
         logger.debug("PolicyAnalyzer components initialized")
         logger.info("PolicyAnalyzer initialized successfully")
 
-    def analyze_single_firewall(self, config: FirewallConfig) -> Dict[str, Any]:
+    def analyze_single_firewall(self, config: FirewallConfig, use_enhanced: bool = True) -> Dict[str, Any]:
         """
         Analyze a single firewall configuration for internal inconsistencies.
         Uses both rule-based analysis and AI-powered analysis.
         
         Args:
             config: Firewall configuration to analyze
+            use_enhanced: Whether to use enhanced analyzer (default: True)
             
         Returns:
             Analysis results including both rule-based and AI findings
         """
         logger.info(f"Starting single firewall analysis for {config.vendor} firewall ID: {config.id}")
         try:
-            # Rule-based analysis - Run all 8 detection engines
-            logger.debug("Running comprehensive rule-based analysis")
-            
-            # Engine 1: Contradictory Rules
-            conflicts = self._check_policy_conflicts(config)
-            logger.info(f"[1/8] Found {len(conflicts)} policy conflicts")
-            
-            # Engine 2: Duplicate Policies
-            redundancies = self._check_redundant_policies(config)
-            logger.info(f"[2/8] Found {len(redundancies)} redundant policies")
-            
-            # Engine 3: Overly Permissive Rules
-            gaps = self._check_coverage_gaps(config)
-            logger.info(f"[3/8] Found {len(gaps)} coverage gaps")
-            
-            # Engine 4: UTM Profile Inconsistency
-            utm_issues = self._check_utm_profiles(config)
-            logger.info(f"[4/8] Found {len(utm_issues)} UTM profile issues")
-            
-            # Engine 5: User Group Consistency (single firewall - check for group references)
-            user_group_issues = self._check_user_group_consistency(config)
-            logger.info(f"[5/8] Found {len(user_group_issues)} user group issues")
-            
-            # Engine 6: DLP Coverage Gaps (single firewall - check for missing DLP)
-            dlp_issues = self._check_dlp_coverage_gaps_single(config)
-            logger.info(f"[6/8] Found {len(dlp_issues)} DLP coverage gaps")
-            
-            # Engine 7: Application Access Gaps
-            app_issues = self._check_application_access_gaps_single(config)
-            logger.info(f"[7/8] Found {len(app_issues)} application access gaps")
-            
-            # Engine 8: Missing Security Coverage
-            security_issues = self._check_missing_security_coverage(config)
-            logger.info(f"[8/8] Found {len(security_issues)} missing security coverage issues")
+            # Use enhanced analyzer if enabled
+            if use_enhanced:
+                logger.info("Using Enhanced Policy Analyzer with 10 comprehensive checks")
+                enhanced_analyzer = EnhancedPolicyAnalyzer(config)
+                enhanced_inconsistencies = enhanced_analyzer.analyze_all()
+                enhanced_summary = enhanced_analyzer.get_results_summary()
+                
+                # Convert enhanced inconsistencies to standard format
+                all_inconsistencies = [i.to_dict() for i in enhanced_inconsistencies]
+                
+                # Set empty original checks when using enhanced
+                conflicts = []
+                redundancies = []
+                gaps = []
+                utm_issues = []
+                user_group_issues = []
+                dlp_issues = []
+                app_issues = []
+                security_issues = []
+            else:
+                logger.debug("Using original rule-based analysis")
+                enhanced_summary = None
+                all_inconsistencies = []
+                
+                # Rule-based analysis - Run all 8 detection engines
+                logger.debug("Running comprehensive rule-based analysis")
+                
+                # Engine 1: Contradictory Rules
+                conflicts = self._check_policy_conflicts(config)
+                logger.info(f"[1/8] Found {len(conflicts)} policy conflicts")
+                
+                # Engine 2: Duplicate Policies
+                redundancies = self._check_redundant_policies(config)
+                logger.info(f"[2/8] Found {len(redundancies)} redundant policies")
+                
+                # Engine 3: Overly Permissive Rules
+                gaps = self._check_coverage_gaps(config)
+                logger.info(f"[3/8] Found {len(gaps)} coverage gaps")
+                
+                # Engine 4: UTM Profile Inconsistency
+                utm_issues = self._check_utm_profiles(config)
+                logger.info(f"[4/8] Found {len(utm_issues)} UTM profile issues")
+                
+                # Engine 5: User Group Consistency (single firewall - check for group references)
+                user_group_issues = self._check_user_group_consistency(config)
+                logger.info(f"[5/8] Found {len(user_group_issues)} user group issues")
+                
+                # Engine 6: DLP Coverage Gaps (single firewall - check for missing DLP)
+                dlp_issues = self._check_dlp_coverage_gaps_single(config)
+                logger.info(f"[6/8] Found {len(dlp_issues)} DLP coverage gaps")
+                
+                # Engine 7: Application Access Gaps
+                app_issues = self._check_application_access_gaps_single(config)
+                logger.info(f"[7/8] Found {len(app_issues)} application access gaps")
+                
+                # Engine 8: Missing Security Coverage
+                security_issues = self._check_missing_security_coverage(config)
+                logger.info(f"[8/8] Found {len(security_issues)} missing security coverage issues")
             
             # AI-powered analysis
             ai_results = {}
@@ -164,69 +190,68 @@ class PolicyAnalyzer(BaseAnalyzer):
                     }
                 }
             
-            # Convert to standardized inconsistency format
-            all_inconsistencies = []
-            
-            # Add conflicts
-            for conflict in conflicts:
-                all_inconsistencies.append({
-                    "type": "Contradictory Rule",
-                    "severity": conflict.get("severity", "HIGH"),
-                    "description": conflict.get("description", ""),
-                    "fortinet_policy": conflict.get("policy_a", {}).get("name", ""),
-                    "zscaler_policy": "N/A",
-                    "affected_groups": self._extract_groups_from_policy(conflict.get("policy_a", {}), config),
-                    "recommendation": conflict.get("recommendation", ""),
-                    "details": {
-                        "policy_a": conflict.get("policy_a", {}),
-                        "policy_b": conflict.get("policy_b", {})
-                    }
-                })
-            
-            # Add redundancies
-            for redundancy in redundancies:
-                all_inconsistencies.append({
-                    "type": "Duplicate Policy",
-                    "severity": redundancy.get("severity", "MEDIUM"),
-                    "description": redundancy.get("description", ""),
-                    "fortinet_policy": redundancy.get("policy_a", {}).get("name", ""),
-                    "zscaler_policy": "N/A",
-                    "affected_groups": self._extract_groups_from_policy(redundancy.get("policy_a", {}), config),
-                    "recommendation": redundancy.get("recommendation", ""),
-                    "details": {
-                        "policy_a": redundancy.get("policy_a", {}),
-                        "policy_b": redundancy.get("policy_b", {})
-                    }
-                })
-            
-            # Add coverage gaps
-            for gap in gaps:
-                inconsistency_type = "Overly Permissive Rule"
-                if gap.get("type") == "overly_permissive_destination":
-                    inconsistency_type = "Overly Permissive Destination"
-                elif gap.get("type") == "overly_permissive_source":
-                    inconsistency_type = "Overly Permissive Source"
+            # Convert to standardized inconsistency format (only if not using enhanced)
+            if not use_enhanced:
+                # Add conflicts
+                for conflict in conflicts:
+                    all_inconsistencies.append({
+                        "type": "Contradictory Rule",
+                        "severity": conflict.get("severity", "HIGH"),
+                        "description": conflict.get("description", ""),
+                        "fortinet_policy": conflict.get("policy_a", {}).get("name", ""),
+                        "zscaler_policy": "N/A",
+                        "affected_groups": self._extract_groups_from_policy(conflict.get("policy_a", {}), config),
+                        "recommendation": conflict.get("recommendation", ""),
+                        "details": {
+                            "policy_a": conflict.get("policy_a", {}),
+                            "policy_b": conflict.get("policy_b", {})
+                        }
+                    })
                 
-                all_inconsistencies.append({
-                    "type": inconsistency_type,
-                    "severity": gap.get("severity", "HIGH"),
-                    "description": gap.get("description", ""),
-                    "fortinet_policy": gap.get("policy_name", ""),
-                    "zscaler_policy": "N/A",
-                    "affected_groups": self._extract_groups_from_policy_id(gap.get("policy_id", ""), config),
-                    "recommendation": gap.get("recommendation", ""),
-                    "details": {
-                        "policy_id": gap.get("policy_id", ""),
-                        "policy_name": gap.get("policy_name", "")
-                    }
-                })
-            
-            # Add all detection engine results
-            all_inconsistencies.extend(utm_issues)
-            all_inconsistencies.extend(user_group_issues)
-            all_inconsistencies.extend(dlp_issues)
-            all_inconsistencies.extend(app_issues)
-            all_inconsistencies.extend(security_issues)
+                # Add redundancies
+                for redundancy in redundancies:
+                    all_inconsistencies.append({
+                        "type": "Duplicate Policy",
+                        "severity": redundancy.get("severity", "MEDIUM"),
+                        "description": redundancy.get("description", ""),
+                        "fortinet_policy": redundancy.get("policy_a", {}).get("name", ""),
+                        "zscaler_policy": "N/A",
+                        "affected_groups": self._extract_groups_from_policy(redundancy.get("policy_a", {}), config),
+                        "recommendation": redundancy.get("recommendation", ""),
+                        "details": {
+                            "policy_a": redundancy.get("policy_a", {}),
+                            "policy_b": redundancy.get("policy_b", {})
+                        }
+                    })
+                
+                # Add coverage gaps
+                for gap in gaps:
+                    inconsistency_type = "Overly Permissive Rule"
+                    if gap.get("type") == "overly_permissive_destination":
+                        inconsistency_type = "Overly Permissive Destination"
+                    elif gap.get("type") == "overly_permissive_source":
+                        inconsistency_type = "Overly Permissive Source"
+                    
+                    all_inconsistencies.append({
+                        "type": inconsistency_type,
+                        "severity": gap.get("severity", "HIGH"),
+                        "description": gap.get("description", ""),
+                        "fortinet_policy": gap.get("policy_name", ""),
+                        "zscaler_policy": "N/A",
+                        "affected_groups": self._extract_groups_from_policy_id(gap.get("policy_id", ""), config),
+                        "recommendation": gap.get("recommendation", ""),
+                        "details": {
+                            "policy_id": gap.get("policy_id", ""),
+                            "policy_name": gap.get("policy_name", "")
+                        }
+                    })
+                
+                # Add all detection engine results
+                all_inconsistencies.extend(utm_issues)
+                all_inconsistencies.extend(user_group_issues)
+                all_inconsistencies.extend(dlp_issues)
+                all_inconsistencies.extend(app_issues)
+                all_inconsistencies.extend(security_issues)
             
             # Add AI findings if available
             if ai_results.get("ai_analysis", {}).get("enabled"):
@@ -238,26 +263,33 @@ class PolicyAnalyzer(BaseAnalyzer):
             high_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "HIGH")
             medium_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "MEDIUM")
             low_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "LOW")
+            critical_severity = sum(1 for i in all_inconsistencies if i.get("severity") == "CRITICAL")
             
             # Format results in the requested structure
             from datetime import datetime
             results = {
                 "summary": {
                     "total_inconsistencies": len(all_inconsistencies),
+                    "critical_severity": critical_severity,
                     "high_severity": high_severity,
                     "medium_severity": medium_severity,
                     "low_severity": low_severity,
-                    "analysis_timestamp": datetime.now().isoformat()
+                    "analysis_timestamp": datetime.now().isoformat(),
+                    "analysis_method": "enhanced" if use_enhanced else "original"
                 },
                 "inconsistencies": all_inconsistencies,
                 "rule_based_analysis": {
-                    "conflicts": conflicts,
-                    "redundancies": redundancies,
-                    "coverage_gaps": gaps,
+                    "conflicts": conflicts if not use_enhanced else [],
+                    "redundancies": redundancies if not use_enhanced else [],
+                    "coverage_gaps": gaps if not use_enhanced else [],
                     "risk_score": self._calculate_risk_score(conflicts, redundancies, gaps)
                 },
                 **ai_results  # Include AI analysis results
             }
+            
+            # Add enhanced analysis summary if available
+            if use_enhanced and enhanced_summary:
+                results["enhanced_analysis"] = enhanced_summary
             
             logger.info(f"Analysis complete: {len(all_inconsistencies)} inconsistencies found ({high_severity} HIGH, {medium_severity} MEDIUM, {low_severity} LOW)")
             logger.info("Single firewall analysis completed successfully")
