@@ -3,7 +3,7 @@ Base report generator for firewall policy analysis.
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Any
-from app.models.base import PolicyComparisonResult, ComplianceReport
+from models.base import PolicyComparisonResult, ComplianceReport
 
 
 class BaseReportGenerator(ABC):

@@ -3,7 +3,7 @@ Base parser for firewall configurations.
 """
 from abc import ABC, abstractmethod
 from typing import Dict, Any
-from app.models.base import FirewallConfig
+from models.base import FirewallConfig
 
 
 class BaseParser(ABC):
