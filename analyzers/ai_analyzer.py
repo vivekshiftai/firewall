@@ -4,7 +4,8 @@ AI-powered policy analyzer using OpenAI GPT for inconsistency detection.
 import logging
 import os
 import json
-from typing import Dict, Any, List, Optional
+import time
+from typing import Dict, Any, List, Optional, Callable
 from openai import OpenAI
 from models.base import FirewallConfig
 
@@ -71,6 +72,69 @@ class AIInconsistencyAnalyzer:
         
         logger.info("AI Inconsistency Analyzer initialized successfully")
     
+    def _retry_with_timeout(self, func: Callable, max_retries: int = 3, timeout_seconds: int = 180, 
+                           retry_delay: int = 60, operation_name: str = "API call") -> Any:
+        """
+        Retry mechanism with timeout handling.
+        
+        Args:
+            func: Function to execute with retry
+            max_retries: Maximum number of retry attempts (default: 3)
+            timeout_seconds: Timeout in seconds before considering request failed (default: 180 = 3 minutes)
+            retry_delay: Delay between retries in seconds (default: 60 = 1 minute)
+            operation_name: Name of operation for logging
+            
+        Returns:
+            Result from function call
+            
+        Raises:
+            Exception: If all retries fail or timeout occurs
+        """
+        last_exception = None
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(f"Attempt {attempt}/{max_retries} for {operation_name} (timeout: {timeout_seconds}s)")
+                start_time = time.time()
+                
+                # Execute the function
+                result = func()
+                
+                elapsed_time = time.time() - start_time
+                logger.info(f"{operation_name} completed successfully in {elapsed_time:.2f} seconds")
+                return result
+                
+            except Exception as e:
+                last_exception = e
+                error_str = str(e).lower()
+                elapsed_time = time.time() - start_time if 'start_time' in locals() else 0
+                
+                # Check if it's a timeout error
+                is_timeout = (
+                    "timeout" in error_str or
+                    "timed out" in error_str or
+                    "connection" in error_str or
+                    elapsed_time >= timeout_seconds
+                )
+                
+                if is_timeout:
+                    logger.warning(f"{operation_name} timed out or connection error after {elapsed_time:.2f} seconds: {str(e)}")
+                else:
+                    logger.warning(f"{operation_name} failed with error: {str(e)}")
+                
+                # If this was the last attempt, don't retry
+                if attempt >= max_retries:
+                    logger.error(f"{operation_name} failed after {max_retries} attempts")
+                    break
+                
+                # Wait before retrying (3 minutes = 180 seconds as requested)
+                wait_time = timeout_seconds if is_timeout else retry_delay
+                logger.info(f"Waiting {wait_time} seconds before retry {attempt + 1}/{max_retries}...")
+                time.sleep(wait_time)
+        
+        # If we get here, all retries failed
+        raise last_exception if last_exception else Exception(f"{operation_name} failed after {max_retries} attempts")
+    
     def analyze_with_ai(self, config: FirewallConfig) -> Dict[str, Any]:
         """
         Analyze firewall policies using AI to detect inconsistencies.
@@ -114,11 +178,21 @@ class AIInconsistencyAnalyzer:
                     logger.info("Using GPT-5 API (responses.create)")
                     combined_prompt = f"{self._get_system_prompt()}\n\n{prompt}"
                     
-                    response = self.client.responses.create(
-                        model="gpt-5",
-                        input=combined_prompt,
-                        reasoning={"effort": "high"},  # High effort for detailed analysis
-                        text={"verbosity": "high"}  # High verbosity for comprehensive responses
+                    # Use retry mechanism with 3 minute timeout
+                    def call_gpt5_responses_analyze():
+                        return self.client.responses.create(
+                            model="gpt-5",
+                            input=combined_prompt,
+                            reasoning={"effort": "high"},  # High effort for detailed analysis
+                            text={"verbosity": "high"}  # High verbosity for comprehensive responses
+                        )
+                    
+                    response = self._retry_with_timeout(
+                        call_gpt5_responses_analyze,
+                        max_retries=3,
+                        timeout_seconds=180,  # 3 minutes timeout
+                        retry_delay=180,  # Wait 3 minutes before retry
+                        operation_name="GPT-5 responses.create() (analyze_with_ai)"
                     )
                     
                     # GPT-5 returns output_text directly
@@ -132,20 +206,29 @@ class AIInconsistencyAnalyzer:
                     
                     try:
                         # Try GPT-5 with chat completions API
-                        response = self.client.chat.completions.create(
-                            model="gpt-5",
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": self._get_system_prompt()
-                                },
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ],
-                            temperature=0.3,
-                            response_format={"type": "json_object"}
+                        def call_gpt5_chat_analyze():
+                            return self.client.chat.completions.create(
+                                model="gpt-5",
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": self._get_system_prompt()
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": prompt
+                                    }
+                                ],
+                                temperature=0.3,
+                                response_format={"type": "json_object"}
+                            )
+                        
+                        response = self._retry_with_timeout(
+                            call_gpt5_chat_analyze,
+                            max_retries=3,
+                            timeout_seconds=180,  # 3 minutes timeout
+                            retry_delay=180,  # Wait 3 minutes before retry
+                            operation_name="GPT-5 chat completions (analyze_with_ai)"
                         )
                         ai_response = json.loads(response.choices[0].message.content)
                         logger.info("Successfully used GPT-5 with chat completions API")
@@ -154,38 +237,57 @@ class AIInconsistencyAnalyzer:
                         logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
                         logger.warning("Falling back to gpt-4o as last resort")
                         self.model = "gpt-4o"
-                        response = self.client.chat.completions.create(
-                            model=self.model,
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": self._get_system_prompt()
-                                },
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ],
-                            temperature=0.3,
-                            response_format={"type": "json_object"}
+                        
+                        def call_gpt4o_fallback():
+                            return self.client.chat.completions.create(
+                                model=self.model,
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": self._get_system_prompt()
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": prompt
+                                    }
+                                ],
+                                temperature=0.3,
+                                response_format={"type": "json_object"}
+                            )
+                        
+                        response = self._retry_with_timeout(
+                            call_gpt4o_fallback,
+                            max_retries=3,
+                            timeout_seconds=180,  # 3 minutes timeout
+                            retry_delay=180,  # Wait 3 minutes before retry
+                            operation_name="GPT-4o fallback (analyze_with_ai)"
                         )
                         ai_response = json.loads(response.choices[0].message.content)
             else:
                 # Use standard chat completions API for other models
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": self._get_system_prompt()
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    temperature=0.3,
-                    response_format={"type": "json_object"}
+                def call_chat_completions_analyze():
+                    return self.client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": self._get_system_prompt()
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.3,
+                        response_format={"type": "json_object"}
+                    )
+                
+                response = self._retry_with_timeout(
+                    call_chat_completions_analyze,
+                    max_retries=3,
+                    timeout_seconds=180,  # 3 minutes timeout
+                    retry_delay=180,  # Wait 3 minutes before retry
+                    operation_name=f"Chat completions ({self.model}) (analyze_with_ai)"
                 )
                 ai_response = json.loads(response.choices[0].message.content)
             logger.info("AI analysis completed successfully")
@@ -586,11 +688,21 @@ Return your analysis in the JSON format specified in the system prompt."""
                     logger.info("Using GPT-5 API (responses.create)")
                     combined_prompt = f"{self._get_inconsistency_system_prompt()}\n\n{prompt}"
                     
-                    response = self.client.responses.create(
-                        model="gpt-5",
-                        input=combined_prompt,
-                        reasoning={"effort": "high"},  # High effort for detailed analysis
-                        text={"verbosity": "high"}  # High verbosity for comprehensive responses
+                    # Use retry mechanism with 3 minute timeout
+                    def call_gpt5_responses():
+                        return self.client.responses.create(
+                            model="gpt-5",
+                            input=combined_prompt,
+                            reasoning={"effort": "high"},  # High effort for detailed analysis
+                            text={"verbosity": "high"}  # High verbosity for comprehensive responses
+                        )
+                    
+                    response = self._retry_with_timeout(
+                        call_gpt5_responses,
+                        max_retries=3,
+                        timeout_seconds=180,  # 3 minutes timeout
+                        retry_delay=180,  # Wait 3 minutes before retry
+                        operation_name="GPT-5 responses.create()"
                     )
                     
                     # GPT-5 returns output_text directly
@@ -614,31 +726,9 @@ Return your analysis in the JSON format specified in the system prompt."""
                     
                     # Try GPT-5 with chat completions API (some OpenAI clients might support this)
                     try:
-                        response = self.client.chat.completions.create(
-                            model="gpt-5",  # Try GPT-5 with chat completions
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": self._get_inconsistency_system_prompt()
-                                },
-                                {
-                                    "role": "user",
-                                    "content": prompt
-                                }
-                            ],
-                            temperature=0.2,
-                            response_format={"type": "json_object"}
-                        )
-                        ai_response = json.loads(response.choices[0].message.content)
-                        logger.info("Successfully used GPT-5 with chat completions API")
-                    except Exception as gpt5_chat_error:
-                        # If GPT-5 with chat completions also fails, fallback to gpt-4o as last resort
-                        logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
-                        logger.warning("Falling back to gpt-4o as last resort")
-                        self.model = "gpt-4o"
-                        try:
-                            response = self.client.chat.completions.create(
-                                model=self.model,
+                        def call_gpt5_chat():
+                            return self.client.chat.completions.create(
+                                model="gpt-5",  # Try GPT-5 with chat completions
                                 messages=[
                                     {
                                         "role": "system",
@@ -651,6 +741,46 @@ Return your analysis in the JSON format specified in the system prompt."""
                                 ],
                                 temperature=0.2,
                                 response_format={"type": "json_object"}
+                            )
+                        
+                        response = self._retry_with_timeout(
+                            call_gpt5_chat,
+                            max_retries=3,
+                            timeout_seconds=180,  # 3 minutes timeout
+                            retry_delay=180,  # Wait 3 minutes before retry
+                            operation_name="GPT-5 chat completions"
+                        )
+                        ai_response = json.loads(response.choices[0].message.content)
+                        logger.info("Successfully used GPT-5 with chat completions API")
+                    except Exception as gpt5_chat_error:
+                        # If GPT-5 with chat completions also fails, fallback to gpt-4o as last resort
+                        logger.warning(f"GPT-5 with chat completions also failed ({str(gpt5_chat_error)})")
+                        logger.warning("Falling back to gpt-4o as last resort")
+                        self.model = "gpt-4o"
+                        try:
+                            def call_gpt4o_fallback_inconsistencies():
+                                return self.client.chat.completions.create(
+                                    model=self.model,
+                                    messages=[
+                                        {
+                                            "role": "system",
+                                            "content": self._get_inconsistency_system_prompt()
+                                        },
+                                        {
+                                            "role": "user",
+                                            "content": prompt
+                                        }
+                                    ],
+                                    temperature=0.2,
+                                    response_format={"type": "json_object"}
+                                )
+                            
+                            response = self._retry_with_timeout(
+                                call_gpt4o_fallback_inconsistencies,
+                                max_retries=3,
+                                timeout_seconds=180,  # 3 minutes timeout
+                                retry_delay=180,  # Wait 3 minutes before retry
+                                operation_name="GPT-4o fallback (analyze_inconsistencies)"
                             )
                             ai_response = json.loads(response.choices[0].message.content)
                         except Exception as fallback_error:
@@ -665,20 +795,29 @@ Return your analysis in the JSON format specified in the system prompt."""
             else:
                 # Use standard chat completions API for other models
                 try:
-                    response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": self._get_inconsistency_system_prompt()
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        temperature=0.2,
-                        response_format={"type": "json_object"}
+                    def call_chat_completions():
+                        return self.client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": self._get_inconsistency_system_prompt()
+                                },
+                                {
+                                    "role": "user",
+                                    "content": prompt
+                                }
+                            ],
+                            temperature=0.2,
+                            response_format={"type": "json_object"}
+                        )
+                    
+                    response = self._retry_with_timeout(
+                        call_chat_completions,
+                        max_retries=3,
+                        timeout_seconds=180,  # 3 minutes timeout
+                        retry_delay=180,  # Wait 3 minutes before retry
+                        operation_name=f"Chat completions ({self.model})"
                     )
                     ai_response = json.loads(response.choices[0].message.content)
                 except Exception as api_error:
