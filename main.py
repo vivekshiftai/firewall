@@ -1,12 +1,9 @@
 import logging
 import logging.config
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes.api import router as api_router
-import secrets
 from config import settings
-import logging
 
 # Configure comprehensive logging
 LOGGING_CONFIG = {
@@ -68,13 +65,15 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+# Include API routes
+app.include_router(api_router)
+
 @app.on_event("startup")
 async def startup_event():
     """Event handler for application startup."""
     logger.info("Application startup event triggered")
     logger.info("Cross-Firewall Policy Analysis Engine is starting up")
     logger.info("CORS configured to allow all origins")
-    logger.info("Authentication enabled with HTTP Basic Auth")
     logger.info("Application startup completed successfully")
 
 @app.on_event("shutdown")
@@ -83,32 +82,6 @@ async def shutdown_event():
     logger.info("Application shutdown event triggered")
     logger.info("Cross-Firewall Policy Analysis Engine is shutting down")
     logger.info("Application shutdown completed successfully")
-
-# Security
-security = HTTPBasic()
-
-# Simple user storage (in production, use a proper database)
-users = {
-    "admin": "password123",
-    "analyst": "analyst123"
-}
-
-def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
-    """Authenticate user credentials."""
-    username = credentials.username
-    password = credentials.password
-    
-    if username in users and secrets.compare_digest(password, users[username]):
-        return username
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-
-# Include API routes
-app.include_router(api_router)
 
 @app.get("/")
 async def root():

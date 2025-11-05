@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from analyzers.base import BaseAnalyzer
 from models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
 from utils.embeddings import PolicyEmbedder
-from utils.mapping import PolicyMapper
+from utils.mapping import SemanticMapper
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ class PolicyAnalyzer(BaseAnalyzer):
         """Initialize the policy analyzer."""
         logger.info("Initializing PolicyAnalyzer")
         self.embedder = PolicyEmbedder()
-        self.mapper = PolicyMapper()
+        self.mapper = SemanticMapper()
         logger.debug("PolicyAnalyzer components initialized")
         logger.info("PolicyAnalyzer initialized successfully")
 
@@ -76,7 +76,16 @@ class PolicyAnalyzer(BaseAnalyzer):
         logger.info(f"Starting firewall comparison between {config_a.id} ({config_a.vendor}) and {config_b.id} ({config_b.vendor})")
         try:
             logger.debug("Mapping policies between firewalls")
-            mapped_policies = self.mapper.map_policies(config_a.policies, config_b.policies)
+            # Create a simple mapping for demonstration
+            mapped_policies = {}
+            for i, policy_a in enumerate(config_a.policies):
+                if i < len(config_b.policies):
+                    policy_b = config_b.policies[i]
+                    mapped_policies[policy_a.get("id", f"policy-{i}")] = {
+                        "policy_a": policy_a,
+                        "policy_b": policy_b,
+                        "similarity": 0.5  # Placeholder similarity score
+                    }
             logger.info(f"Mapped {len(mapped_policies)} policy pairs")
             
             logger.debug("Calculating semantic similarity")
