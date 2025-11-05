@@ -1,0 +1,747 @@
+[
+    {
+        "policy_id": "1",
+        "name": "globalt3ch_r0",
+        "query-v1-status": true,
+        "query-v2c-status": true,
+        "ip": "10.10.10.50 255.255.255.255"
+    },
+    {
+        "policy_id": "2",
+        "ip": "10.10.10.51 255.255.255.255"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-C-Level-Executives"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Senior-Management"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Department-Heads"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Project-Managers"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-IT-Security-Team"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-IT-Infrastructure"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-IT-DevOps"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-IT-Helpdesk"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Cloud-Architects"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Finance-Controllers"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Accounting-Team"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Legal-Compliance"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Audit-Team"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-HR-Management"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-HR-Recruitment"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Payroll-Team"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Operations-EMEA"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Manufacturing-Floor"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Supply-Chain"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Logistics-Team"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Sales-EMEA"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Sales-Leadership"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Marketing-Team"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Business-Development"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Research-Development"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Product-Engineering"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Quality-Assurance"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Customer-Support"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-Technical-Support"
+    },
+    {
+        "policy_id": "1",
+        "server-name": "AzureAD-LDAP",
+        "group-name": "SEC-ZS-External-Contractors"
+    },
+    {
+        "policy_id": "1",
+        "name": "POL-001-BLOCK-GEO-RESTRICTED",
+        "srcintf": "port1\" \"port2",
+        "dstintf": "any",
+        "action": "deny",
+        "srcaddr": "GEO-BLOCKED-COUNTRIES",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "ALL",
+        "logtraffic": "all",
+        "comments": "NIS2 Compliance: Block High-Risk Countries"
+    },
+    {
+        "policy_id": "10",
+        "name": "POL-010-EXECUTIVE-INTERNET",
+        "srcintf": "VLAN-10-EXECUTIVE",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-10-EXECUTIVE",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-strict",
+        "webfilter-profile": "webfilter-executive",
+        "ips-sensor": "ips-strict",
+        "application-list": "app-control-standard",
+        "ssl-ssh-profile": "deep-inspection",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "C-Level-Executives\" \"Senior-Management",
+        "comments": "Executive Internet with Full Security"
+    },
+    {
+        "policy_id": "20",
+        "name": "POL-020-IT-SECURITY-INTERNET",
+        "srcintf": "VLAN-20-IT-SECURITY",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-20-IT-SECURITY",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "ALL",
+        "utm-status": true,
+        "av-profile": "av-profile-monitor",
+        "webfilter-profile": "webfilter-it-security",
+        "ips-sensor": "ips-monitor",
+        "application-list": "app-control-permissive",
+        "ssl-ssh-profile": "certificate-inspection",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "IT-Security-Team",
+        "comments": "IT Security Team - Monitor Mode"
+    },
+    {
+        "policy_id": "21",
+        "name": "POL-021-IT-INFRASTRUCTURE-ADMIN",
+        "srcintf": "VLAN-21-IT-INFRASTRUCTURE",
+        "dstintf": "port3\" \"port4",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-21-IT-INFRASTRUCTURE",
+        "dstaddr": "GRP-CRITICAL-SERVERS\" \"GRP-DMZ-SERVERS",
+        "schedule": "always",
+        "service": "GRP-ADMIN-SERVICES\" \"HTTPS",
+        "groups": "IT-Infrastructure\" \"Cloud-Architects",
+        "logtraffic": "all",
+        "comments": "IT Admin Access to Servers"
+    },
+    {
+        "policy_id": "22",
+        "name": "POL-022-DEVOPS-CLOUD-ACCESS",
+        "srcintf": "VLAN-22-IT-DEVOPS",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-22-IT-DEVOPS",
+        "dstaddr": "GRP-CLOUD-NETWORKS",
+        "schedule": "always",
+        "service": "HTTPS\" \"SSH\" \"GIT",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "ips-sensor": "ips-standard",
+        "ssl-ssh-profile": "certificate-inspection",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "IT-DevOps",
+        "comments": "DevOps to Cloud Resources"
+    },
+    {
+        "policy_id": "30",
+        "name": "POL-030-FINANCE-TO-ERP",
+        "srcintf": "VLAN-30-FINANCE",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-30-FINANCE",
+        "dstaddr": "SRV-SAP-PROD\" \"SRV-SQL-01",
+        "schedule": "always",
+        "service": "SVC-SAP\" \"SVC-SQL-SERVER\" \"HTTPS",
+        "groups": "Finance-Controllers\" \"Accounting-Team",
+        "logtraffic": "all",
+        "comments": "Finance Access to ERP and Databases"
+    },
+    {
+        "policy_id": "31",
+        "name": "POL-031-FINANCE-INTERNET-RESTRICTED",
+        "srcintf": "VLAN-30-FINANCE",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-30-FINANCE",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-strict",
+        "webfilter-profile": "webfilter-finance",
+        "ips-sensor": "ips-strict",
+        "application-list": "app-control-strict",
+        "ssl-ssh-profile": "deep-inspection",
+        "dlp-sensor": "dlp-financial-data",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "Finance-Controllers\" \"Accounting-Team",
+        "comments": "Finance Restricted Internet with DLP"
+    },
+    {
+        "policy_id": "33",
+        "name": "POL-033-PAYROLL-RESTRICTED",
+        "srcintf": "VLAN-33-PAYROLL",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-33-PAYROLL",
+        "dstaddr": "SRV-SQL-01",
+        "schedule": "always",
+        "service": "SVC-SQL-SERVER\" \"HTTPS",
+        "groups": "Payroll-Team",
+        "logtraffic": "all",
+        "comments": "Payroll Team Database Access Only"
+    },
+    {
+        "policy_id": "40",
+        "name": "POL-040-HR-WORKDAY-ACCESS",
+        "srcintf": "VLAN-40-HR",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-40-HR",
+        "dstaddr": "AZURE-VNET-WESTEUROPE",
+        "schedule": "always",
+        "service": "HTTPS",
+        "groups": "HR-Management\" \"HR-Recruitment",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "ssl-ssh-profile": "certificate-inspection",
+        "dlp-sensor": "dlp-hr-data",
+        "logtraffic": "all",
+        "comments": "HR Access to Workday in Azure"
+    },
+    {
+        "policy_id": "50",
+        "name": "POL-050-OPERATIONS-STANDARD",
+        "srcintf": "VLAN-50-OPERATIONS",
+        "dstintf": "port1\" \"port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-50-OPERATIONS",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "webfilter-profile": "webfilter-standard",
+        "ips-sensor": "ips-standard",
+        "application-list": "app-control-standard",
+        "ssl-ssh-profile": "certificate-inspection",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "Operations-EMEA\" \"Supply-Chain\" \"Logistics-Team",
+        "comments": "Operations Standard Internet and Internal"
+    },
+    {
+        "policy_id": "51",
+        "name": "POL-051-MANUFACTURING-OT-ISOLATED",
+        "srcintf": "port5",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "NET-OT-MANUFACTURING",
+        "dstaddr": "SRV-FILE-01",
+        "schedule": "always",
+        "service": "SVC-SMB",
+        "groups": "Manufacturing-Floor",
+        "logtraffic": "all",
+        "comments": "Manufacturing OT - Limited File Access Only"
+    },
+    {
+        "policy_id": "60",
+        "name": "POL-060-SALES-CRM-INTERNET",
+        "srcintf": "VLAN-60-SALES",
+        "dstintf": "port1\" \"port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-60-SALES",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "webfilter-profile": "webfilter-sales",
+        "ips-sensor": "ips-standard",
+        "application-list": "app-control-sales",
+        "ssl-ssh-profile": "certificate-inspection",
+        "dlp-sensor": "dlp-customer-data",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "Sales-EMEA\" \"Sales-Leadership",
+        "comments": "Sales Access with CRM and DLP"
+    },
+    {
+        "policy_id": "61",
+        "name": "POL-061-MARKETING-INTERNET",
+        "srcintf": "VLAN-61-MARKETING",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-61-MARKETING",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "webfilter-profile": "webfilter-marketing",
+        "ips-sensor": "ips-standard",
+        "application-list": "app-control-marketing",
+        "ssl-ssh-profile": "certificate-inspection",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "Marketing-Team\" \"Business-Development",
+        "comments": "Marketing Internet with Media Access"
+    },
+    {
+        "policy_id": "70",
+        "name": "POL-070-RD-INTERNET-PROTECTED",
+        "srcintf": "VLAN-70-RD",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-70-RD",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS\" \"GIT",
+        "utm-status": true,
+        "av-profile": "av-profile-strict",
+        "webfilter-profile": "webfilter-developer",
+        "ips-sensor": "ips-strict",
+        "application-list": "app-control-developer",
+        "ssl-ssh-profile": "certificate-inspection",
+        "dlp-sensor": "dlp-intellectual-property",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "Research-Development",
+        "comments": "R&D with Strict IP Protection DLP"
+    },
+    {
+        "policy_id": "71",
+        "name": "POL-071-ENGINEERING-CAD-SYSTEMS",
+        "srcintf": "VLAN-71-ENGINEERING",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-71-ENGINEERING",
+        "dstaddr": "SRV-FILE-01",
+        "schedule": "always",
+        "service": "SVC-SMB\" \"HTTPS",
+        "groups": "Product-Engineering\" \"Quality-Assurance",
+        "logtraffic": "all",
+        "comments": "Engineering to CAD File Servers"
+    },
+    {
+        "policy_id": "80",
+        "name": "POL-080-SUPPORT-CRM-ACCESS",
+        "srcintf": "VLAN-80-SUPPORT",
+        "dstintf": "port1\" \"port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-80-SUPPORT",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "webfilter-profile": "webfilter-standard",
+        "ips-sensor": "ips-standard",
+        "application-list": "app-control-support",
+        "ssl-ssh-profile": "certificate-inspection",
+        "dlp-sensor": "dlp-customer-data",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "Customer-Support\" \"Technical-Support",
+        "comments": "Support Teams with Customer Data DLP"
+    },
+    {
+        "policy_id": "90",
+        "name": "POL-090-CONTRACTORS-LIMITED",
+        "srcintf": "VLAN-90-CONTRACTORS",
+        "dstintf": "port1\" \"port3",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-90-CONTRACTORS",
+        "dstaddr": "SRV-FILE-01",
+        "schedule": "always",
+        "service": "HTTPS\" \"SVC-SMB",
+        "utm-status": true,
+        "av-profile": "av-profile-strict",
+        "webfilter-profile": "webfilter-contractors",
+        "ips-sensor": "ips-strict",
+        "application-list": "app-control-strict",
+        "ssl-ssh-profile": "deep-inspection",
+        "dlp-sensor": "dlp-all-data",
+        "nat": true,
+        "logtraffic": "all",
+        "groups": "External-Contractors",
+        "comments": "Contractors - Highly Restricted with Full DLP"
+    },
+    {
+        "policy_id": "99",
+        "name": "POL-099-GUEST-INTERNET-ONLY",
+        "srcintf": "VLAN-99-GUEST",
+        "dstintf": "port1",
+        "action": "accept",
+        "srcaddr": "NET-VLAN-99-GUEST",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "HTTP\" \"HTTPS\" \"DNS",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "webfilter-profile": "webfilter-guest",
+        "ips-sensor": "ips-standard",
+        "ssl-ssh-profile": "certificate-inspection",
+        "nat": true,
+        "logtraffic": "all",
+        "comments": "Guest WiFi - Internet Only, No Internal Access"
+    },
+    {
+        "policy_id": "1000",
+        "name": "POL-1000-DEFAULT-DENY-ALL",
+        "srcintf": "any",
+        "dstintf": "any",
+        "action": "deny",
+        "srcaddr": "all",
+        "dstaddr": "all",
+        "schedule": "always",
+        "service": "ALL",
+        "logtraffic": "all",
+        "comments": "Default Deny - Log All Blocked Traffic"
+    },
+    {
+        "policy_id": "100",
+        "name": "POL-100-VPN-REMOTE-ACCESS",
+        "srcintf": "ssl-vpn",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "all",
+        "dstaddr": "GRP-INTERNAL-NETWORKS",
+        "schedule": "always",
+        "service": "ALL",
+        "utm-status": true,
+        "av-profile": "av-profile-standard",
+        "ips-sensor": "ips-standard",
+        "logtraffic": "all",
+        "comments": "Remote VPN Users to Internal Resources"
+    },
+    {
+        "policy_id": "101",
+        "name": "POL-101-IPSEC-AZURE",
+        "srcintf": "port1",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "AZURE-VNET-WESTEUROPE\" \"AZURE-VNET-GERMANYWEST",
+        "dstaddr": "GRP-INTERNAL-NETWORKS",
+        "schedule": "always",
+        "service": "ALL",
+        "logtraffic": "all",
+        "comments": "Site-to-Site VPN from Azure"
+    },
+    {
+        "policy_id": "102",
+        "name": "POL-102-IPSEC-AWS",
+        "srcintf": "port1",
+        "dstintf": "port3",
+        "action": "accept",
+        "srcaddr": "AWS-VPC-EU-WEST-1\" \"AWS-VPC-EU-CENTRAL-1",
+        "dstaddr": "GRP-INTERNAL-NETWORKS",
+        "schedule": "always",
+        "service": "ALL",
+        "logtraffic": "all",
+        "comments": "Site-to-Site VPN from AWS"
+    },
+    {
+        "policy_id": "1",
+        "groups": "C-Level-Executives\" \"Senior-Management\" \"IT-Security-Team\" \"IT-Infrastructure",
+        "portal": "full-access"
+    },
+    {
+        "policy_id": "2",
+        "groups": "Sales-EMEA\" \"Operations-EMEA",
+        "portal": "tunnel-access"
+    },
+    {
+        "policy_id": "1",
+        "rule": "all",
+        "severity": "critical high medium",
+        "action": "block",
+        "log": true
+    },
+    {
+        "policy_id": "1",
+        "rule": "all",
+        "severity": "critical high",
+        "action": "block",
+        "log": true
+    },
+    {
+        "policy_id": "2",
+        "rule": "all",
+        "severity": "medium",
+        "action": "default",
+        "log": true
+    },
+    {
+        "policy_id": "1",
+        "rule": "all",
+        "severity": "critical high medium low",
+        "action": "default",
+        "log": true
+    },
+    {
+        "policy_id": "1",
+        "category": "1 26 61 83 96",
+        "action": "block"
+    },
+    {
+        "policy_id": "2",
+        "category": "2 4 5 6 7 15 23",
+        "action": "warning"
+    },
+    {
+        "policy_id": "1",
+        "category": "1 2 3 4 5 6 7 15 23 26 61 83 96",
+        "action": "block"
+    },
+    {
+        "policy_id": "1",
+        "category": "1 2 3 4 5 6 7 8 9 11 15 23 24 26 61 83 96",
+        "action": "block"
+    },
+    {
+        "policy_id": "1",
+        "category": "1 2 3 4 5 6 7 8 9 11 15 23 24 26 29 61 83 96",
+        "action": "block"
+    },
+    {
+        "policy_id": "1",
+        "category": "1 26 61 83 96",
+        "action": "block"
+    },
+    {
+        "policy_id": "1",
+        "name": "Credit-Card-Numbers",
+        "protocol": "smtp http-post",
+        "rule": [],
+        "action": "block",
+        "proto": "smtp http-post",
+        "filter-category": "credit-card",
+        "severity": "critical"
+    },
+    {
+        "policy_id": "1",
+        "name": "EU-Personal-Data",
+        "protocol": "smtp http-post",
+        "rule": [],
+        "action": "block",
+        "proto": "smtp http-post",
+        "filter-category": "passport social-security",
+        "severity": "critical"
+    },
+    {
+        "policy_id": "1",
+        "name": "Source-Code-Files",
+        "protocol": "smtp http-post",
+        "rule": [],
+        "action": "block",
+        "proto": "smtp http-post",
+        "file-type": "13 14 15 16",
+        "severity": "high"
+    },
+    {
+        "policy_id": "1",
+        "name": "CAD-Design-Files",
+        "protocol": "smtp http-post",
+        "rule": [],
+        "action": "block",
+        "proto": "smtp http-post",
+        "file-type": "44 45 46",
+        "severity": "high"
+    },
+    {
+        "policy_id": "1",
+        "name": "Employee-Records",
+        "protocol": "smtp http-post",
+        "rule": [],
+        "action": "block",
+        "proto": "smtp http-post",
+        "filter-category": "social-security passport",
+        "severity": "critical"
+    },
+    {
+        "policy_id": "1",
+        "name": "Customer-PII",
+        "protocol": "smtp http-post",
+        "rule": [],
+        "action": "log",
+        "proto": "smtp http-post",
+        "filter-category": "email-address phone-number",
+        "severity": "medium"
+    },
+    {
+        "policy_id": "1",
+        "name": "All-Sensitive-Data",
+        "protocol": "smtp http-post ftp",
+        "rule": [],
+        "action": "block",
+        "proto": "smtp http-post ftp",
+        "filter-category": "credit-card social-security passport",
+        "severity": "critical"
+    },
+    {
+        "policy_id": "1",
+        "category": "2 6 15 16",
+        "action": "block",
+        "log": true
+    },
+    {
+        "policy_id": "1",
+        "category": "2 6",
+        "action": "block",
+        "log": true
+    },
+    {
+        "policy_id": "1",
+        "category": "2",
+        "action": "block",
+        "log": true
+    },
+    {
+        "policy_id": "1",
+        "category": "2 6",
+        "action": "block"
+    },
+    {
+        "policy_id": "2",
+        "application": "Salesforce.Application\" \"Microsoft.Teams\" \"Zoom",
+        "action": "allow"
+    },
+    {
+        "policy_id": "1",
+        "category": "2 6",
+        "action": "block"
+    },
+    {
+        "policy_id": "2",
+        "application": "LinkedIn\" \"Twitter\" \"Facebook.Application",
+        "action": "allow"
+    },
+    {
+        "policy_id": "1",
+        "category": "2",
+        "action": "block"
+    },
+    {
+        "policy_id": "2",
+        "application": "GitHub\" \"Docker\" \"Stack.Overflow\" \"AWS.CLI\" \"Azure.CLI",
+        "action": "allow"
+    },
+    {
+        "policy_id": "1",
+        "category": "2 6",
+        "action": "block"
+    },
+    {
+        "policy_id": "2",
+        "application": "Salesforce.Application\" \"ServiceNow\" \"Zoom",
+        "action": "allow"
+    }
+]

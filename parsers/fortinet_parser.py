@@ -150,34 +150,130 @@ class FortinetParser(BaseParser):
                     "comments": getattr(fortinet_policy, "comments", "")
                 }
                 
-                # Extract additional fields from original policy data
+                # Extract ALL fields from original policy data - preserve everything
                 original_policy = policy_data
                 
-                # Add groups if present
-                if "groups" in original_policy:
-                    standardized_policy["groups"] = original_policy["groups"]
-                elif "group-name" in original_policy:
-                    standardized_policy["groups"] = original_policy["group-name"]
+                # First, preserve ALL original fields for maximum data extraction
+                for key, value in original_policy.items():
+                    # Skip fields we've already processed
+                    if key not in ["id", "policy_id", "name", "policy_name", "srcintf", "dstintf", 
+                                  "srcaddr", "dstaddr", "service", "services", "action", "status", 
+                                  "schedule", "comments", "comment"]:
+                        # Preserve original field name AND add standardized version if applicable
+                        standardized_policy[key] = value
                 
-                # Add UTM profiles if present
-                if "utm-status" in original_policy:
-                    standardized_policy["utm-status"] = original_policy["utm-status"]
-                if "av-profile" in original_policy:
-                    standardized_policy["av-profile"] = original_policy["av-profile"]
-                if "ips-sensor" in original_policy:
-                    standardized_policy["ips-sensor"] = original_policy["ips-sensor"]
-                if "webfilter-profile" in original_policy:
-                    standardized_policy["webfilter-profile"] = original_policy["webfilter-profile"]
-                if "dlp-sensor" in original_policy:
-                    standardized_policy["dlp-sensor"] = original_policy["dlp-sensor"]
-                if "application-list" in original_policy:
-                    standardized_policy["application-list"] = original_policy["application-list"]
-                if "ssl-ssh-profile" in original_policy:
-                    standardized_policy["ssl-ssh-profile"] = original_policy["ssl-ssh-profile"]
-                if "nat" in original_policy:
-                    standardized_policy["nat"] = original_policy["nat"]
-                if "logtraffic" in original_policy:
-                    standardized_policy["logtraffic"] = original_policy["logtraffic"]
+                # Map all Fortinet fields to standardized policy (with variations)
+                field_mappings = {
+                    # Basic fields
+                    "groups": ["groups", "group-name", "group_name"],
+                    "users": ["users", "user-name", "user_name"],
+                    "srcaddr_negate": ["srcaddr-negate", "srcaddr_negate", "srcaddr-negate"],
+                    "service_negate": ["service-negate", "service_negate", "service-negate"],
+                    
+                    # Internet service
+                    "internet_service": ["internet-service", "internet_service"],
+                    "internet_service_id": ["internet-service-id", "internet_service_id", "internet-service-id"],
+                    
+                    # Application
+                    "application": ["application", "application-list", "application_list"],
+                    
+                    # User/Group auth
+                    "fsso": ["fsso"],
+                    "ntlm": ["ntlm"],
+                    "wsso": ["wsso"],
+                    
+                    # NAT fields
+                    "nat": ["nat"],
+                    "natip": ["natip", "nat-ip"],
+                    "ippool": ["ippool", "ip-pool"],
+                    "poolname": ["poolname", "pool-name"],
+                    "rtp_nat": ["rtp-nat", "rtp_nat"],
+                    "permit_any_host": ["permit-any-host", "permit_any_host"],
+                    "match_vip": ["match-vip", "match_vip"],
+                    "rtp_addr": ["rtp-addr", "rtp_addr"],
+                    
+                    # Traffic shaping
+                    "traffic_shaper": ["traffic-shaper", "traffic_shaper"],
+                    "session_ttl": ["session-ttl", "session_ttl"],
+                    "vlan_cos_fwd": ["vlan-cos-fwd", "vlan_cos_fwd"],
+                    
+                    # UTM fields
+                    "utm_status": ["utm-status", "utm_status"],
+                    "inspection_mode": ["inspection-mode", "inspection_mode"],
+                    "av_profile": ["av-profile", "av_profile"],
+                    "webfilter_profile": ["webfilter-profile", "webfilter_profile"],
+                    "dnsfilter_profile": ["dnsfilter-profile", "dnsfilter_profile"],
+                    "emailfilter_profile": ["emailfilter-profile", "emailfilter_profile"],
+                    "dlp_sensor": ["dlp-sensor", "dlp_sensor"],
+                    "ips_sensor": ["ips-sensor", "ips_sensor"],
+                    "voip_profile": ["voip-profile", "voip_profile"],
+                    "waf_profile": ["waf-profile", "waf_profile"],
+                    "ssh_filter_profile": ["ssh-filter-profile", "ssh_filter_profile"],
+                    "ssl_ssh_profile": ["ssl-ssh-profile", "ssl_ssh_profile"],
+                    "profile_type": ["profile-type", "profile_type"],
+                    "profile_group": ["profile-group", "profile_group"],
+                    
+                    # Policy redirects
+                    "http_policy_redirect": ["http-policy-redirect", "http_policy_redirect"],
+                    "ssh_policy_redirect": ["ssh-policy-redirect", "ssh_policy_redirect"],
+                    "webproxy_profile": ["webproxy-profile", "webproxy_profile"],
+                    
+                    # Logging
+                    "logtraffic": ["logtraffic", "log-traffic"],
+                    "logtraffic_start": ["logtraffic-start", "logtraffic_start"],
+                    "capture_packet": ["capture-packet", "capture_packet"],
+                    "custom_log_fields": ["custom-log-fields", "custom_log_fields"],
+                    
+                    # TOS
+                    "tos": ["tos"],
+                    "tos_mask": ["tos-mask", "tos_mask"],
+                    "tos_negate": ["tos-negate", "tos_negate"],
+                    
+                    # Security
+                    "anti_replay": ["anti-replay", "anti_replay"],
+                    "tcp_session_without_syn": ["tcp-session-without-syn", "tcp_session_without_syn"],
+                    
+                    # VPN
+                    "vpntunnel": ["vpntunnel", "vpn-tunnel"],
+                    "inbound": ["inbound"],
+                    "outbound": ["outbound"],
+                    
+                    # Optimization
+                    "wanopt": ["wanopt"],
+                    "webcache": ["webcache"],
+                    
+                    # Reputation
+                    "reputation_minimum": ["reputation-minimum", "reputation_minimum"],
+                    
+                    # Authentication
+                    "auth_cert": ["auth-cert", "auth_cert"],
+                    "auth_redirect_addr": ["auth-redirect-addr", "auth_redirect_addr"],
+                    "redirect_url": ["redirect-url", "redirect_url"],
+                    
+                    # QoS
+                    "diffservcode_forward": ["diffservcode-forward", "diffservcode_forward"],
+                    "identity_based_route": ["identity-based-route", "identity_based_route"]
+                }
+                
+                # Extract all fields using the mappings (preserve original AND add standardized)
+                for std_field, field_variants in field_mappings.items():
+                    for variant in field_variants:
+                        if variant in original_policy:
+                            value = original_policy[variant]
+                            # Keep original field name (already done above, but ensure it's there)
+                            standardized_policy[variant] = value
+                            # Also add standardized name for consistency
+                            standardized_policy[std_field] = value
+                            break
+                
+                # Extract any remaining unknown fields that weren't in our mappings
+                # This ensures we capture ALL data, even fields we don't know about
+                for key, value in original_policy.items():
+                    # Only add if not already processed
+                    if key not in standardized_policy:
+                        standardized_policy[key] = value
+                        logger.debug(f"Preserved unknown field: {key}")
+                
                 policies.append(standardized_policy)
                 logger.debug(f"Policy {i+1} parsed successfully")
             except Exception as e:
@@ -241,6 +337,145 @@ class FortinetParser(BaseParser):
         
         # Map schedule
         mapped["schedule"] = policy_data.get("schedule", "always")
+        
+        # Map comments
+        mapped["comments"] = policy_data.get("comments", policy_data.get("comment", ""))
+        
+        # Map all optional fields with field name variations
+        optional_field_mappings = {
+            # Basic
+            "srcaddr_negate": ["srcaddr-negate", "srcaddr_negate"],
+            "service_negate": ["service-negate", "service_negate"],
+            
+            # Internet service
+            "internet_service": ["internet-service", "internet_service"],
+            "internet_service_id": ["internet-service-id", "internet_service_id"],
+            
+            # Application
+            "application": ["application", "application-list", "application_list"],
+            
+            # Users/Groups
+            "users": ["users", "user-name", "user_name"],
+            "groups": ["groups", "group-name", "group_name"],
+            "fsso": ["fsso"],
+            "ntlm": ["ntlm"],
+            "wsso": ["wsso"],
+            
+            # NAT
+            "nat": ["nat"],
+            "natip": ["natip", "nat-ip"],
+            "ippool": ["ippool", "ip-pool"],
+            "poolname": ["poolname", "pool-name"],
+            "rtp_nat": ["rtp-nat", "rtp_nat"],
+            "permit_any_host": ["permit-any-host", "permit_any_host"],
+            "match_vip": ["match-vip", "match_vip"],
+            "rtp_addr": ["rtp-addr", "rtp_addr"],
+            
+            # Traffic shaping
+            "traffic_shaper": ["traffic-shaper", "traffic_shaper"],
+            "session_ttl": ["session-ttl", "session_ttl"],
+            "vlan_cos_fwd": ["vlan-cos-fwd", "vlan_cos_fwd"],
+            
+            # UTM
+            "utm_status": ["utm-status", "utm_status"],
+            "inspection_mode": ["inspection-mode", "inspection_mode"],
+            "av_profile": ["av-profile", "av_profile"],
+            "webfilter_profile": ["webfilter-profile", "webfilter_profile"],
+            "dnsfilter_profile": ["dnsfilter-profile", "dnsfilter_profile"],
+            "emailfilter_profile": ["emailfilter-profile", "emailfilter_profile"],
+            "dlp_sensor": ["dlp-sensor", "dlp_sensor"],
+            "ips_sensor": ["ips-sensor", "ips_sensor"],
+            "voip_profile": ["voip-profile", "voip_profile"],
+            "waf_profile": ["waf-profile", "waf_profile"],
+            "ssh_filter_profile": ["ssh-filter-profile", "ssh_filter_profile"],
+            "ssl_ssh_profile": ["ssl-ssh-profile", "ssl_ssh_profile"],
+            "profile_type": ["profile-type", "profile_type"],
+            "profile_group": ["profile-group", "profile_group"],
+            
+            # Policy redirects
+            "http_policy_redirect": ["http-policy-redirect", "http_policy_redirect"],
+            "ssh_policy_redirect": ["ssh-policy-redirect", "ssh_policy_redirect"],
+            "webproxy_profile": ["webproxy-profile", "webproxy_profile"],
+            
+            # Logging
+            "logtraffic": ["logtraffic", "log-traffic"],
+            "logtraffic_start": ["logtraffic-start", "logtraffic_start"],
+            "capture_packet": ["capture-packet", "capture_packet"],
+            "custom_log_fields": ["custom-log-fields", "custom_log_fields"],
+            
+            # TOS
+            "tos": ["tos"],
+            "tos_mask": ["tos-mask", "tos_mask"],
+            "tos_negate": ["tos-negate", "tos_negate"],
+            
+            # Security
+            "anti_replay": ["anti-replay", "anti_replay"],
+            "tcp_session_without_syn": ["tcp-session-without-syn", "tcp_session_without_syn"],
+            
+            # VPN
+            "vpntunnel": ["vpntunnel", "vpn-tunnel"],
+            "inbound": ["inbound"],
+            "outbound": ["outbound"],
+            
+            # Optimization
+            "wanopt": ["wanopt"],
+            "webcache": ["webcache"],
+            
+            # Reputation
+            "reputation_minimum": ["reputation-minimum", "reputation_minimum"],
+            
+            # Authentication
+            "auth_cert": ["auth-cert", "auth_cert"],
+            "auth_redirect_addr": ["auth-redirect-addr", "auth_redirect_addr"],
+            "redirect_url": ["redirect-url", "redirect_url"],
+            
+            # QoS
+            "diffservcode_forward": ["diffservcode-forward", "diffservcode_forward"],
+            "identity_based_route": ["identity-based-route", "identity_based_route"]
+        }
+        
+        # Map all optional fields
+        for std_field, field_variants in optional_field_mappings.items():
+            for variant in field_variants:
+                if variant in policy_data:
+                    value = policy_data[variant]
+                    # Handle list conversion for certain fields
+                    if std_field in ["users", "groups", "internet_service_id", "application", "custom_log_fields"]:
+                        if isinstance(value, str):
+                            mapped[std_field] = self._to_list(value)
+                        elif isinstance(value, list):
+                            mapped[std_field] = value
+                        else:
+                            mapped[std_field] = [value] if value else []
+                    # Handle integer conversion
+                    elif std_field in ["session_ttl", "vlan_cos_fwd", "reputation_minimum", "diffservcode_forward"]:
+                        try:
+                            mapped[std_field] = int(value) if value else None
+                        except (ValueError, TypeError):
+                            mapped[std_field] = None
+                    else:
+                        mapped[std_field] = value
+                    break
+        
+        # IMPORTANT: Preserve ALL other fields from policy_data that weren't in our mappings
+        # This ensures we extract ALL data, even unknown fields
+        for key, value in policy_data.items():
+            # Skip fields we've already mapped
+            if key not in mapped and key not in ["id", "policy_id", "name", "policy_name", 
+                                                  "srcintf", "dstintf", "srcaddr", "dstaddr", 
+                                                  "service", "services", "action", "status", 
+                                                  "schedule", "comments", "comment"]:
+                # Check if this key matches any variant we already processed
+                already_processed = False
+                for std_field, field_variants in optional_field_mappings.items():
+                    if key in field_variants:
+                        already_processed = True
+                        break
+                
+                if not already_processed:
+                    # Preserve the field as-is
+                    mapped[key] = value
+                    logger.debug(f"Preserved additional field from policy_data: {key}")
         
         return mapped
     

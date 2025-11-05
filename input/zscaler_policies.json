@@ -1,0 +1,1030 @@
+{
+  {
+      "policy_id": 1,
+      "policy_name": "Executive-Internet-Policy",
+      "rank": 1,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "C-Level-Executives",
+        "Senior-Management"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Spam",
+        "Spyware",
+        "Anonymizers",
+        "Peer-to-Peer",
+        "Hacking"
+      ],
+      "warned_categories": [
+        "Social Networking (Personal)",
+        "Streaming Media (Personal)",
+        "Online Storage"
+      ],
+      "allowed_categories": [
+        "All Other Categories"
+      ],
+      "ssl_inspection": "full",
+      "safe_search_enforcement": true,
+      "youtube_restrict_mode": "moderate",
+      "comments": "Executive-level internet policy with broad access"
+    },
+    {
+      "policy_id": 2,
+      "policy_name": "Standard-Internet-Policy",
+      "rank": 2,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "Department-Heads",
+        "Project-Managers",
+        "IT-Helpdesk",
+        "Operations-EMEA",
+        "Supply-Chain",
+        "Logistics-Team",
+        "Business-Development",
+        "Quality-Assurance",
+        "Customer-Support",
+        "Technical-Support",
+        "HR-Recruitment"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Spam",
+        "Spyware",
+        "Anonymizers",
+        "Peer-to-Peer",
+        "Hacking",
+        "Social Networking (Personal)",
+        "Streaming Media (Personal)",
+        "Online Gaming",
+        "Dating"
+      ],
+      "warned_categories": [
+        "Online Shopping",
+        "Online Storage"
+      ],
+      "allowed_categories": [
+        "All Other Categories"
+      ],
+      "ssl_inspection": "full",
+      "bandwidth_control": {
+        "video_streaming_limit_mbps": 5,
+        "file_download_limit_mbps": 10
+      },
+      "comments": "Standard policy for general staff"
+    },
+    {
+      "policy_id": 3,
+      "policy_name": "Finance-Internet-Policy",
+      "rank": 3,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "Finance-Controllers",
+        "Accounting-Team",
+        "Payroll-Team"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Spam",
+        "Spyware",
+        "Anonymizers",
+        "Peer-to-Peer",
+        "Hacking",
+        "Social Networking",
+        "Streaming Media",
+        "Online Gaming",
+        "Dating",
+        "Online Shopping"
+      ],
+      "allowed_categories": [
+        "Financial Services",
+        "Business",
+        "Education"
+      ],
+      "ssl_inspection": "full",
+      "file_type_control": {
+        "blocked_types": [
+          ".exe",
+          ".msi",
+          ".scr",
+          ".vbs",
+          ".bat"
+        ]
+      },
+      "comments": "Finance-restricted internet policy with DLP"
+    },
+    {
+      "policy_id": 4,
+      "policy_name": "IT-Security-Internet-Policy",
+      "rank": 4,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "IT-Security-Team"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities"
+      ],
+      "logged_only_categories": [
+        "Hacking",
+        "Anonymizers",
+        "Security Research"
+      ],
+      "allowed_categories": [
+        "All Other Categories"
+      ],
+      "ssl_inspection": "selective",
+      "bandwidth_control": {
+        "priority": "highest"
+      },
+      "comments": "IT Security team with monitoring mode"
+    },
+    {
+      "policy_id": 5,
+      "policy_name": "IT-Admin-Internet-Policy",
+      "rank": 5,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "IT-Infrastructure",
+        "Cloud-Architects"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing"
+      ],
+      "allowed_categories": [
+        "All Other Categories"
+      ],
+      "ssl_inspection": "full",
+      "cloud_app_control": {
+        "allowed_apps": [
+          "Azure Portal",
+          "AWS Console",
+          "GitHub",
+          "Docker Hub"
+        ]
+      },
+      "comments": "IT Admin internet with cloud service access"
+    },
+    {
+      "policy_id": 6,
+      "policy_name": "Developer-Internet-Policy",
+      "rank": 6,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "IT-DevOps",
+        "Research-Development",
+        "Product-Engineering"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Social Networking (Personal)"
+      ],
+      "allowed_categories": [
+        "Technology",
+        "Software Development",
+        "Cloud Services",
+        "Code Repositories"
+      ],
+      "ssl_inspection": "selective",
+      "cloud_app_control": {
+        "allowed_apps": [
+          "GitHub",
+          "GitLab",
+          "Stack Overflow",
+          "Docker Hub",
+          "npm Registry",
+          "PyPI",
+          "Maven Central"
+        ]
+      },
+      "comments": "Developer internet with repository access"
+    },
+    {
+      "policy_id": 7,
+      "policy_name": "Sales-Internet-Policy",
+      "rank": 7,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "Sales-EMEA",
+        "Sales-Leadership"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Anonymizers",
+        "Peer-to-Peer"
+      ],
+      "warned_categories": [
+        "Social Networking (Personal)",
+        "Streaming Media"
+      ],
+      "allowed_categories": [
+        "Business",
+        "Sales & Marketing",
+        "Social Networking (Business)"
+      ],
+      "ssl_inspection": "full",
+      "cloud_app_control": {
+        "allowed_apps": [
+          "Salesforce",
+          "LinkedIn",
+          "Microsoft Teams",
+          "Zoom"
+        ]
+      },
+      "comments": "Sales internet with CRM access"
+    },
+    {
+      "policy_id": 8,
+      "policy_name": "Marketing-Internet-Policy",
+      "rank": 8,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "Marketing-Team"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Anonymizers"
+      ],
+      "allowed_categories": [
+        "Business",
+        "Sales & Marketing",
+        "Social Media (All)",
+        "Advertising",
+        "Design Tools"
+      ],
+      "ssl_inspection": "full",
+      "bandwidth_priority": "high",
+      "cloud_app_control": {
+        "allowed_apps": [
+          "Adobe Creative Cloud",
+          "HubSpot",
+          "Mailchimp",
+          "Canva",
+          "Social Media Platforms"
+        ]
+      },
+      "comments": "Marketing internet with social media access"
+    },
+    {
+      "policy_id": 9,
+      "policy_name": "Legal-Internet-Policy",
+      "rank": 9,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "Legal-Compliance"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Social Networking",
+        "Streaming Media"
+      ],
+      "allowed_categories": [
+        "Legal",
+        "Government",
+        "Business",
+        "News"
+      ],
+      "ssl_inspection": "full",
+      "file_type_control": {
+        "blocked_types": [
+          ".exe",
+          ".msi",
+          ".scr"
+        ]
+      },
+      "comments": "Legal team internet access"
+    },
+    {
+      "policy_id": 10,
+      "policy_name": "Restricted-Internet-Policy",
+      "rank": 10,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "Manufacturing-Floor"
+      ],
+      "blocked_categories": [
+        "All Categories"
+      ],
+      "allowed_categories": [
+        "Business (Specific Domains Only)",
+        "Company Intranet"
+      ],
+      "allowed_domains": [
+        "globaltecheurope.com",
+        "*.globaltecheurope.com",
+        "microsoft.com",
+        "office365.com"
+      ],
+      "ssl_inspection": "none",
+      "comments": "Manufacturing floor restricted internet"
+    },
+    {
+      "policy_id": 11,
+      "policy_name": "Contractor-Internet-Policy",
+      "rank": 11,
+      "state": "enabled",
+      "type": "URL Filtering",
+      "apply_to_groups": [
+        "External-Contractors"
+      ],
+      "blocked_categories": [
+        "Adult Content",
+        "Gambling",
+        "Illegal Activities",
+        "Malware Sites",
+        "Phishing",
+        "Spam",
+        "Spyware",
+        "Anonymizers",
+        "Peer-to-Peer",
+        "Social Networking",
+        "Streaming Media",
+        "Online Gaming",
+        "File Sharing"
+      ],
+      "allowed_categories": [
+        "Business (Limited)",
+        "Company Resources"
+      ],
+      "ssl_inspection": "full",
+      "session_timeout_minutes": 120,
+      "bandwidth_limit_mbps": 10,
+      "comments": "Contractor internet with strict restrictions"
+    }
+  ],
+  "zia_dlp_policies": [
+    {
+      "policy_id": 1,
+      "policy_name": "GDPR-Personal-Data-Protection",
+      "rank": 1,
+      "state": "enabled",
+      "type": "DLP Policy",
+      "description": "Prevent exfiltration of EU personal data (GDPR compliance)",
+      "apply_to_groups": [
+        "All Users"
+      ],
+      "engines": [
+        {
+          "name": "EU-Personal-Identifiable-Information",
+          "patterns": [
+            "EU Passport Numbers",
+            "National ID Numbers (EU)",
+            "Social Security Numbers (EU)",
+            "Tax ID Numbers",
+            "Driver's License Numbers (EU)"
+          ],
+          "threshold": 1
+        },
+        {
+          "name": "Payment-Card-Data",
+          "patterns": [
+            "Credit Card Numbers (VISA, MasterCard, AMEX)",
+            "IBAN",
+            "SWIFT/BIC Codes"
+          ],
+          "threshold": 1
+        },
+        {
+          "name": "Health-Data",
+          "patterns": [
+            "Medical Record Numbers",
+            "Health Insurance Numbers",
+            "Prescription Data"
+          ],
+          "threshold": 1
+        }
+      ],
+      "actions": {
+        "email": "block",
+        "web_upload": "block",
+        "cloud_apps": "block",
+        "notification": "user_and_admin"
+      },
+      "logging": "full",
+      "comments": "GDPR personal data protection"
+    },
+    {
+      "policy_id": 2,
+      "policy_name": "Financial-Data-Protection",
+      "rank": 2,
+      "state": "enabled",
+      "type": "DLP Policy",
+      "apply_to_groups": [
+        "All Users"
+      ],
+      "engines": [
+        {
+          "name": "Financial-Documents",
+          "file_types": [
+            ".xlsx",
+            ".xls",
+            ".csv"
+          ],
+          "keywords": [
+            "Budget",
+            "Financial",
+            "Quarterly Results",
+            "Revenue",
+            "P&L"
+          ],
+          "threshold": 3
+        },
+        {
+          "name": "Payment-Information",
+          "patterns": [
+            "Credit Card",
+            "Bank Account",
+            "IBAN"
+          ],
+          "threshold": 2
+        }
+      ],
+      "actions": {
+        "email_external": "block",
+        "web_upload": "warn",
+        "cloud_apps_unsanctioned": "block"
+      },
+      "comments": "Financial data exfiltration protection"
+    },
+    {
+      "policy_id": 3,
+      "policy_name": "Intellectual-Property-Protection",
+      "rank": 3,
+      "state": "enabled",
+      "type": "DLP Policy",
+      "apply_to_groups": [
+        "Research-Development",
+        "Product-Engineering",
+        "IT-DevOps"
+      ],
+      "engines": [
+        {
+          "name": "Source-Code",
+          "file_types": [
+            ".java",
+            ".py",
+            ".js",
+            ".cpp",
+            ".cs",
+            ".go"
+          ],
+          "action": "block_external_upload"
+        },
+        {
+          "name": "Design-Documents",
+          "file_types": [
+            ".dwg",
+            ".dxf",
+            ".stl",
+            ".step"
+          ],
+          "keywords": [
+            "Confidential",
+            "Proprietary",
+            "Patent"
+          ],
+          "threshold": 1
+        },
+        {
+          "name": "Trade-Secrets",
+          "keywords": [
+            "Trade Secret",
+            "Proprietary Formula",
+            "Confidential Research"
+          ],
+          "threshold": 1
+        }
+      ],
+      "actions": {
+        "email_external": "block",
+        "web_upload": "block",
+        "cloud_apps_unsanctioned": "block",
+        "notification": "security_team"
+      },
+      "comments": "IP and trade secret protection"
+    },
+    {
+      "policy_id": 4,
+      "policy_name": "Executive-Communications-Protection",
+      "rank": 4,
+      "state": "enabled",
+      "type": "DLP Policy",
+      "apply_to_groups": [
+        "C-Level-Executives",
+        "Senior-Management"
+      ],
+      "engines": [
+        {
+          "name": "M&A-Information",
+          "keywords": [
+            "Merger",
+            "Acquisition",
+            "Confidential Deal",
+            "Due Diligence"
+          ],
+          "threshold": 2
+        },
+        {
+          "name": "Board-Materials",
+          "keywords": [
+            "Board Meeting",
+            "Board Presentation",
+            "Executive Session"
+          ],
+          "threshold": 1
+        }
+      ],
+      "actions": {
+        "email_external": "block",
+        "web_upload": "block",
+        "notification": "CISO"
+      },
+      "comments": "Executive sensitive information protection"
+    },
+    {
+      "policy_id": 5,
+      "policy_name": "HR-Data-Protection",
+      "rank": 5,
+      "state": "enabled",
+      "type": "DLP Policy",
+      "apply_to_groups": [
+        "HR-Management",
+        "HR-Recruitment",
+        "Payroll-Team"
+      ],
+      "engines": [
+        {
+          "name": "Employee-Records",
+          "file_types": [
+            ".xlsx",
+            ".pdf"
+          ],
+          "keywords": [
+            "Employee Data",
+            "Salary",
+            "Performance Review",
+            "Disciplinary"
+          ],
+          "threshold": 2
+        },
+        {
+          "name": "Payroll-Data",
+          "keywords": [
+            "Payroll",
+            "Salary",
+            "Compensation",
+            "Benefits"
+          ],
+          "threshold": 1
+        }
+      ],
+      "actions": {
+        "email_external": "block",
+        "web_upload": "block"
+      },
+      "comments": "HR and payroll data protection"
+    }
+  ],
+  "zpa_access_policies": [
+    {
+      "policy_id": 1,
+      "policy_name": "Executive-Full-Access",
+      "rank": 1,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "C-Level-Executives",
+        "Senior-Management"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": true,
+      "trusted_networks": "any",
+      "applications": [
+        "All Application Segments"
+      ],
+      "action": "allow",
+      "comments": "Full access for executives"
+    },
+    {
+      "policy_id": 2,
+      "policy_name": "Finance-Systems-Access",
+      "rank": 2,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "Finance-Controllers",
+        "Accounting-Team",
+        "Audit-Team"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": true,
+      "os_requirements": {
+        "windows": "10+",
+        "macos": "11+",
+        "encryption": "required"
+      },
+      "applications": [
+        "ERP-Systems-SAP",
+        "Finance-Applications"
+      ],
+      "action": "allow",
+      "comments": "Finance team access to ERP and accounting systems"
+    },
+    {
+      "policy_id": 3,
+      "policy_name": "HR-Systems-Access",
+      "rank": 3,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "HR-Management",
+        "HR-Recruitment",
+        "Payroll-Team"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": true,
+      "applications": [
+        "HR-Workday-OnPrem",
+        "File-Servers-Corporate"
+      ],
+      "action": "allow",
+      "comments": "HR access to Workday and file servers"
+    },
+    {
+      "policy_id": 4,
+      "policy_name": "Engineering-Access",
+      "rank": 4,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "Product-Engineering",
+        "Research-Development",
+        "Quality-Assurance"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": false,
+      "device_type": [
+        "workstation"
+      ],
+      "applications": [
+        "Engineering-CAD-Systems",
+        "File-Servers-Corporate",
+        "Azure-DevOps-Services"
+      ],
+      "action": "allow",
+      "comments": "Engineering access to CAD and DevOps systems"
+    },
+    {
+      "policy_id": 5,
+      "policy_name": "DevOps-Admin-Access",
+      "rank": 5,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "IT-DevOps",
+        "Cloud-Architects"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": true,
+      "time_based": {
+        "allowed_hours": "0000-2359",
+        "timezone": "Europe/Berlin"
+      },
+      "applications": [
+        "Azure-DevOps-Services",
+        "AWS-Cloud-Applications",
+        "Jump-Hosts-Admin"
+      ],
+      "action": "allow",
+      "comments": "DevOps and cloud admin access"
+    },
+    {
+      "policy_id": 6,
+      "policy_name": "IT-Infrastructure-Admin",
+      "rank": 6,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "IT-Infrastructure",
+        "IT-Security-Team"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": true,
+      "session_recording": true,
+      "applications": [
+        "All Application Segments"
+      ],
+      "action": "allow",
+      "comments": "Full IT admin access with session recording"
+    },
+    {
+      "policy_id": 7,
+      "policy_name": "Sales-CRM-Access",
+      "rank": 7,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "Sales-EMEA",
+        "Sales-Leadership",
+        "Marketing-Team"
+      ],
+      "device_posture": "healthy",
+      "mfa_required": false,
+      "applications": [
+        "CRM-Salesforce-Integration",
+        "File-Servers-Corporate"
+      ],
+      "action": "allow",
+      "comments": "Sales access to CRM and file servers"
+    },
+    {
+      "policy_id": 8,
+      "policy_name": "Operations-ERP-Access",
+      "rank": 8,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "Operations-EMEA",
+        "Supply-Chain",
+        "Logistics-Team"
+      ],
+      "device_posture": "compliant",
+      "applications": [
+        "ERP-Systems-SAP",
+        "File-Servers-Corporate"
+      ],
+      "action": "allow",
+      "comments": "Operations access to ERP systems"
+    },
+    {
+      "policy_id": 9,
+      "policy_name": "Manufacturing-MES-Access",
+      "rank": 9,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "Manufacturing-Floor"
+      ],
+      "device_posture": "healthy",
+      "source_ip": [
+        "10.50.0.0/16"
+      ],
+      "applications": [
+        "Manufacturing-MES"
+      ],
+      "action": "allow",
+      "comments": "Manufacturing floor MES access"
+    },
+    {
+      "policy_id": 10,
+      "policy_name": "Contractor-Limited-Access",
+      "rank": 10,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "External-Contractors"
+      ],
+      "device_posture": "compliant",
+      "mfa_required": true,
+      "session_timeout_minutes": 120,
+      "applications": [
+        "File-Servers-Corporate",
+        "CRM-Salesforce-Integration"
+      ],
+      "action": "allow",
+      "comments": "Limited contractor access with session timeout"
+    },
+    {
+      "policy_id": 11,
+      "policy_name": "Default-Deny-All",
+      "rank": 999,
+      "state": "enabled",
+      "type": "Access Policy",
+      "user_groups": [
+        "All Users"
+      ],
+      "applications": [
+        "All Application Segments"
+      ],
+      "action": "deny",
+      "logging": "full",
+      "comments": "Default deny policy"
+    }
+  ],
+  "zpa_application_segments": [
+    {
+      "segment_id": 1,
+      "name": "ERP-Systems-SAP",
+      "description": "SAP ERP production environment",
+      "enabled": true,
+      "domain_names": [
+        "sap-prod.globaltecheurope.internal",
+        "sap.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "3200-3299",
+        "8000",
+        "8443"
+      ],
+      "udp_ports": [],
+      "health_check": {
+        "enabled": true,
+        "interval_seconds": 60
+      },
+      "server_groups": [
+        "On-Prem-Frankfurt-DC1",
+        "Azure-WestEurope-VNET1"
+      ]
+    },
+    {
+      "segment_id": 2,
+      "name": "Finance-Applications",
+      "description": "Financial systems and databases",
+      "enabled": true,
+      "domain_names": [
+        "finance-apps.globaltecheurope.internal",
+        "accounting.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "443",
+        "1433",
+        "1521"
+      ],
+      "server_groups": [
+        "On-Prem-Frankfurt-DC1"
+      ]
+    },
+    {
+      "segment_id": 3,
+      "name": "HR-Workday-OnPrem",
+      "description": "Workday on-premise integrations",
+      "enabled": true,
+      "domain_names": [
+        "workday-int.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "443",
+        "8443"
+      ],
+      "server_groups": [
+        "Azure-WestEurope-VNET1"
+      ]
+    },
+    {
+      "segment_id": 4,
+      "name": "Engineering-CAD-Systems",
+      "description": "Engineering design and CAD applications",
+      "enabled": true,
+      "domain_names": [
+        "cad.globaltecheurope.internal",
+        "plm.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "443",
+        "8080-8090"
+      ],
+      "server_groups": [
+        "On-Prem-Frankfurt-DC2"
+      ]
+    },
+    {
+      "segment_id": 5,
+      "name": "Manufacturing-MES",
+      "description": "Manufacturing Execution Systems",
+      "enabled": true,
+      "domain_names": [
+        "mes.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "443",
+        "4840"
+      ],
+      "server_groups": [
+        "Manufacturing-OT-Network"
+      ]
+    },
+    {
+      "segment_id": 6,
+      "name": "Azure-DevOps-Services",
+      "description": "Azure DevOps pipelines and repos",
+      "enabled": true,
+      "domain_names": [
+        "dev.azure.com/globaltecheurope"
+      ],
+      "tcp_ports": [
+        "443"
+      ],
+      "server_groups": [
+        "Azure-WestEurope-VNET2"
+      ]
+    },
+    {
+      "segment_id": 7,
+      "name": "AWS-Cloud-Applications",
+      "description": "AWS-hosted applications",
+      "enabled": true,
+      "domain_names": [
+        "*.eu-west-1.globaltecheurope.cloud",
+        "*.eu-central-1.globaltecheurope.cloud"
+      ],
+      "tcp_ports": [
+        "443",
+        "8443"
+      ],
+      "server_groups": [
+        "AWS-EU-West-1",
+        "AWS-EU-Central-1"
+      ]
+    },
+    {
+      "segment_id": 8,
+      "name": "Jump-Hosts-Admin",
+      "description": "Administrative jump hosts",
+      "enabled": true,
+      "domain_names": [
+        "jumphost01.globaltecheurope.internal",
+        "jumphost02.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "22",
+        "3389"
+      ],
+      "server_groups": [
+        "DMZ-Frankfurt"
+      ]
+    },
+    {
+      "segment_id": 9,
+      "name": "File-Servers-Corporate",
+      "description": "Corporate file shares",
+      "enabled": true,
+      "domain_names": [
+        "fileserver*.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "445",
+        "139"
+      ],
+      "server_groups": [
+        "On-Prem-All-Sites"
+      ]
+    },
+    {
+      "segment_id": 10,
+      "name": "CRM-Salesforce-Integration",
+      "description": "Salesforce integration endpoints",
+      "enabled": true,
+      "domain_names": [
+        "sfdc-int.globaltecheurope.internal"
+      ],
+      "tcp_ports": [
+        "443"
+      ],
+      "server_groups": [
+        "Azure-WestEurope-VNET1"
+      ]
+    }
+}

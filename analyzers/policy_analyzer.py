@@ -677,7 +677,7 @@ class PolicyAnalyzer(BaseAnalyzer):
             action = str(policy.get("action", "")).lower()
             
             # Check if it's an internet-facing policy
-            if action in ["accept", "allow"] and ("all" in dst or any("internet" in str(d).lower() for d in dst)):
+            if action in ["accept", "allow"] and ("all" in dst or any(d and "internet" in str(d).lower() for d in dst if d)):
                 # Check for UTM profiles
                 has_utm = policy.get("utm-status", False) or policy.get("utm_enabled", False)
                 has_av = bool(policy.get("av-profile") or policy.get("av_profile"))
@@ -849,7 +849,7 @@ class PolicyAnalyzer(BaseAnalyzer):
                     
                     # If policy allows internet access or sensitive services, should have DLP
                     if (action in ["accept", "allow"] and 
-                        ("all" in dest or any("internet" in str(d).lower() for d in dest))):
+                        ("all" in dest or any(d and "internet" in str(d).lower() for d in dest if d))):
                         groups_without_dlp.add(group)
         
         # Find groups that should have DLP but don't
@@ -865,11 +865,11 @@ class PolicyAnalyzer(BaseAnalyzer):
             # Check if this is a sensitive policy that should have DLP
             if (action in ["accept", "allow"] and 
                 not has_dlp and
-                ("all" in dest or any("internet" in str(d).lower() for d in dest))):
+                ("all" in dest or any(d and "internet" in str(d).lower() for d in dest if d))):
                 
                 # Check if policy handles sensitive data (based on comments or name)
-                policy_name = policy.get("name", "").lower()
-                comments = policy.get("comments", "").lower()
+                policy_name = (policy.get("name") or "").lower()
+                comments = (policy.get("comments") or "").lower()
                 is_sensitive = any(keyword in policy_name or keyword in comments 
                                  for keyword in ["customer", "data", "financial", "pii", "sensitive", "crm", "sales"])
                 
@@ -955,7 +955,7 @@ class PolicyAnalyzer(BaseAnalyzer):
             groups = self._extract_groups_from_policy(policy, config)
             
             # Check for internet access policies missing URL filtering
-            if action in ["accept", "allow"] and ("all" in dest or any("internet" in str(d).lower() for d in dest)):
+            if action in ["accept", "allow"] and ("all" in dest or any(d and "internet" in str(d).lower() for d in dest if d)):
                 has_webfilter = bool(policy.get("webfilter-profile") or policy.get("webfilter_profile"))
                 
                 if not has_webfilter:

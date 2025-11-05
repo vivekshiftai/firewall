@@ -87,9 +87,111 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
         logger.debug(f"Reading uploaded file: {config_file.filename}")
         contents = await config_file.read()
         
-        # Parse JSON content
+        # Parse JSON content - handle any format
         logger.debug("Parsing JSON content")
-        config_data = json.loads(contents)
+        contents_str = contents.decode('utf-8') if isinstance(contents, bytes) else contents
+        
+        # Try multiple JSON parsing strategies
+        config_data = None
+        parse_errors = []
+        
+        # Strategy 1: Try direct JSON parsing
+        try:
+            config_data = json.loads(contents_str)
+            logger.debug("Direct JSON parsing successful")
+        except json.JSONDecodeError as e:
+            parse_errors.append(f"Direct parse: {str(e)}")
+            logger.debug(f"Direct JSON parsing failed: {str(e)}")
+        
+        # Strategy 2: Fix invalid JSON structure (e.g., { [{...}] } -> [{...}])
+        if config_data is None:
+            try:
+                fixed_str = contents_str
+                # Fix: { [{ ... }] } -> [{ ... }]
+                if fixed_str.strip().startswith('{') and '[' in fixed_str:
+                    first_bracket = fixed_str.find('[')
+                    last_bracket = fixed_str.rfind(']')
+                    if first_bracket != -1 and last_bracket != -1:
+                        fixed_str = fixed_str[first_bracket:last_bracket + 1]
+                        logger.info("Fixed JSON: extracted array from object")
+                # Fix: { { ... }, { ... } } -> [{ ... }, { ... }]
+                elif fixed_str.strip().startswith('{') and fixed_str.count('{') > 1:
+                    # Remove outer braces
+                    fixed_str = fixed_str.strip().lstrip('{').rstrip('}')
+                    # Wrap in array brackets
+                    fixed_str = '[' + fixed_str + ']'
+                    logger.info("Fixed JSON: wrapped object collection in array")
+                
+                config_data = json.loads(fixed_str)
+                logger.debug("Fixed JSON parsing successful")
+            except (json.JSONDecodeError, ValueError) as e:
+                parse_errors.append(f"Fixed parse: {str(e)}")
+                logger.debug(f"Fixed JSON parsing failed: {str(e)}")
+        
+        # Strategy 3: Try to extract array from nested structure
+        if config_data is None:
+            try:
+                temp_data = json.loads(contents_str)
+                # If it's a dict, try to find arrays in it
+                if isinstance(temp_data, dict):
+                    # Look for common keys that might contain arrays
+                    for key in ['policies', 'rules', 'config', 'data', 'items', 'objects']:
+                        if key in temp_data and isinstance(temp_data[key], list):
+                            config_data = temp_data[key]
+                            logger.info(f"Extracted array from dict key: {key}")
+                            break
+                    # If no common key found, check if any value is a list
+                    if config_data is None:
+                        for key, value in temp_data.items():
+                            if isinstance(value, list):
+                                config_data = value
+                                logger.info(f"Extracted list from dict key: {key}")
+                                break
+                    # If still None, check nested structures
+                    if config_data is None:
+                        for key, value in temp_data.items():
+                            if isinstance(value, dict):
+                                for nested_key, nested_value in value.items():
+                                    if isinstance(nested_value, list):
+                                        config_data = nested_value
+                                        logger.info(f"Extracted list from nested dict: {key}.{nested_key}")
+                                        break
+                                if config_data:
+                                    break
+                # If it's already a list, use it
+                elif isinstance(temp_data, list):
+                    config_data = temp_data
+                    logger.debug("Data is already a list")
+            except (json.JSONDecodeError, ValueError) as e:
+                parse_errors.append(f"Nested extraction: {str(e)}")
+                logger.debug(f"Nested extraction failed: {str(e)}")
+        
+        # If all strategies failed, raise error with details
+        if config_data is None:
+            error_msg = "Failed to parse JSON. Attempted strategies:\n" + "\n".join(parse_errors)
+            logger.error(error_msg)
+            raise HTTPException(status_code=400, detail=f"Invalid JSON format. {error_msg}")
+        
+        # Final normalization: ensure we have a list
+        if isinstance(config_data, dict):
+            # If single key with list value, extract it
+            if len(config_data) == 1:
+                for key, value in config_data.items():
+                    if isinstance(value, list):
+                        logger.info(f"Extracting list from single-key dict: {key}")
+                        config_data = value
+                        break
+            # If dict contains multiple keys, convert to list
+            if isinstance(config_data, dict):
+                # Check if all values are dictionaries (objects)
+                if all(isinstance(v, dict) for v in config_data.values()):
+                    config_data = list(config_data.values())
+                    logger.info("Converted dict of objects to list")
+                # Or wrap the dict itself in a list
+                elif not isinstance(config_data, list):
+                    config_data = [config_data]
+                    logger.info("Wrapped single dict in list")
+        
         logger.info(f"Successfully parsed JSON content with {len(config_data) if isinstance(config_data, list) else 'N/A'} items")
         
         # Create appropriate parser
