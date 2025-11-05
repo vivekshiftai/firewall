@@ -1,6 +1,8 @@
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from app.routes.api import router as api_router
+import secrets
 
 # Configure logging
 logging.basicConfig(
@@ -14,8 +16,31 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Include API routes
-app.include_router(api_router)
+# Security
+security = HTTPBasic()
+
+# Simple user storage (in production, use a proper database)
+users = {
+    "admin": "password123",
+    "analyst": "analyst123"
+}
+
+def authenticate_user(credentials: HTTPBasicCredentials = Depends(security)):
+    """Authenticate user credentials."""
+    username = credentials.username
+    password = credentials.password
+    
+    if username in users and secrets.compare_digest(password, users[username]):
+        return username
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+# Include API routes with authentication
+app.include_router(api_router, dependencies=[Depends(authenticate_user)])
 
 @app.get("/")
 async def root():
@@ -26,7 +51,7 @@ async def health_check():
     return {"status": "healthy"}
 
 @app.get("/api/v1/vendors")
-async def get_supported_vendors():
+async def get_supported_vendors(username: str = Depends(authenticate_user)):
     """Get list of supported vendors and their version info."""
     return {
         "vendors": [
@@ -43,7 +68,7 @@ async def get_supported_vendors():
             {
                 "name": "cisco",
                 "versions": ["9.2", "9.3", "9.4", "9.5"],
-                "description": "Cisco ASA/FTD firewalls (planned)"
+                "description": "Cisco ASA/FTD firewalls"
             },
             {
                 "name": "paloalto",

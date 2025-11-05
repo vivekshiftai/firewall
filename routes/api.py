@@ -5,12 +5,14 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import HTMLResponse
 from typing import List, Dict, Any
 import json
+import uuid
 
 from app.parsers.factory import ParserFactory
 from app.analyzers.policy_analyzer import PolicyAnalyzer
 from app.reports.json_report import JSONReportGenerator
 from app.models.base import FirewallConfig, PolicyComparisonResult, ComplianceReport
 from utils.visualization import PolicyVisualizer
+from utils.database import AnalysisDatabase
 
 router = APIRouter(prefix="/api/v1")
 
@@ -18,6 +20,8 @@ router = APIRouter(prefix="/api/v1")
 analyzer = PolicyAnalyzer()
 report_generator = JSONReportGenerator()
 visualizer = PolicyVisualizer()
+database = AnalysisDatabase()
+
 
 @router.post("/parse-config")
 async def parse_config(vendor: str = Form(...), config_file: UploadFile = File(...)) -> Dict[str, Any]:
@@ -57,54 +61,99 @@ async def parse_config(vendor: str = Form(...), config_file: UploadFile = File(.
         raise HTTPException(status_code=500, detail=f"Error parsing configuration: {str(e)}")
 
 @router.post("/analyze-single")
-async def analyze_single_firewall(config: FirewallConfig) -> Dict[str, Any]:
+async def analyze_single_firewall(config: FirewallConfig, save_result: bool = True) -> Dict[str, Any]:
     """
     Analyze a single firewall configuration for internal inconsistencies.
     
     Args:
         config: The firewall configuration to analyze
+        save_result: Whether to save the result to database
         
     Returns:
         Analysis results
     """
     try:
         results = analyzer.analyze_single_firewall(config)
+        
+        # Save to database if requested
+        if save_result:
+            analysis_id = str(uuid.uuid4())
+            database.save_analysis_result(
+                analysis_id=analysis_id,
+                firewall_id=config.id,
+                vendor=config.vendor,
+                analysis_type="single_firewall",
+                results=results
+            )
+            results["analysis_id"] = analysis_id
+        
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error analyzing firewall: {str(e)}")
 
 @router.post("/compare-firewalls")
-async def compare_firewalls(config_a: FirewallConfig, config_b: FirewallConfig) -> Dict[str, Any]:
+async def compare_firewalls(config_a: FirewallConfig, config_b: FirewallConfig, save_result: bool = True) -> Dict[str, Any]:
     """
     Compare two firewall configurations.
     
     Args:
         config_a: First firewall configuration
         config_b: Second firewall configuration
+        save_result: Whether to save the result to database
         
     Returns:
         Comparison results
     """
     try:
         comparison_result = analyzer.compare_firewalls(config_a, config_b)
-        return comparison_result.dict()
+        
+        # Save to database if requested
+        if save_result:
+            comparison_id = str(uuid.uuid4())
+            database.save_comparison_result(
+                comparison_id=comparison_id,
+                firewall_a_id=config_a.id,
+                firewall_b_id=config_b.id,
+                vendor_a=config_a.vendor,
+                vendor_b=config_b.vendor,
+                results=comparison_result.dict()
+            )
+            comparison_result_dict = comparison_result.dict()
+            comparison_result_dict["comparison_id"] = comparison_id
+            return comparison_result_dict
+        else:
+            return comparison_result.dict()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error comparing firewalls: {str(e)}")
 
 @router.post("/check-compliance")
-async def check_compliance(config: FirewallConfig, standards: List[str]) -> Dict[str, Any]:
+async def check_compliance(config: FirewallConfig, standards: List[str], save_result: bool = True) -> Dict[str, Any]:
     """
     Check firewall configuration against compliance standards.
     
     Args:
         config: The firewall configuration to check
         standards: List of compliance standards to check against
+        save_result: Whether to save the result to database
         
     Returns:
         Compliance check results
     """
     try:
         results = analyzer.check_compliance(config, standards)
+        
+        # Save to database if requested
+        if save_result:
+            compliance_id = str(uuid.uuid4())
+            database.save_compliance_result(
+                compliance_id=compliance_id,
+                firewall_id=config.id,
+                vendor=config.vendor,
+                standards=standards,
+                results=results
+            )
+            results["compliance_id"] = compliance_id
+        
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error checking compliance: {str(e)}")
@@ -304,3 +353,64 @@ async def visualization_demo():
     </body>
     </html>
     """
+
+@router.get("/analysis/{analysis_id}")
+async def get_analysis_result(analysis_id: str) -> Dict[str, Any]:
+    """
+    Retrieve a saved analysis result.
+    
+    Args:
+        analysis_id: The analysis ID to retrieve
+        
+    Returns:
+        Analysis result
+    """
+    result = database.get_analysis_result(analysis_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Analysis result not found")
+    return result
+
+@router.get("/comparison/{comparison_id}")
+async def get_comparison_result(comparison_id: str) -> Dict[str, Any]:
+    """
+    Retrieve a saved comparison result.
+    
+    Args:
+        comparison_id: The comparison ID to retrieve
+        
+    Returns:
+        Comparison result
+    """
+    result = database.get_comparison_result(comparison_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Comparison result not found")
+    return result
+
+@router.get("/compliance/{compliance_id}")
+async def get_compliance_result(compliance_id: str) -> Dict[str, Any]:
+    """
+    Retrieve a saved compliance result.
+    
+    Args:
+        compliance_id: The compliance ID to retrieve
+        
+    Returns:
+        Compliance result
+    """
+    result = database.get_compliance_result(compliance_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Compliance result not found")
+    return result
+
+@router.get("/recent-analyses")
+async def get_recent_analyses(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get recent analysis results.
+    
+    Args:
+        limit: Maximum number of results to return
+        
+    Returns:
+        List of recent analysis results
+    """
+    return database.get_recent_analyses(limit)

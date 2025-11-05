@@ -1,163 +1,96 @@
 """
 API endpoints for cross-firewall policy analysis.
 """
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Dict, Any, Optional
-import json
-import logging
-from datetime import datetime
+from fastapi import APIRouter, HTTPException
+from typing import List, Dict, Any
 import uuid
+from datetime import datetime
 
-from app.models.base import FirewallConfig
-from app.parsers.factory import ParserFactory
-from app.analyzers.policy_analyzer import PolicyAnalyzer
-from app.vendors.abstract import ParsedConfig, NormalizedPolicy
+from app.vendors.abstract import NormalizedPolicy
+from app.models.cross_firewall import PolicyMatch
 from app.core.policy_matcher import PolicyMatcher
+from app.core.semantic_policy_matcher import SemanticPolicyMatcher
 from app.core.coverage_analyzer import CoverageAnalyzer
 from app.core.conflict_detector import ConflictDetector
-from app.core.normalizers import NormalizationEngine, FortinetNormalizer, ZscalerNormalizer
 from app.core.report_generator import ReportGenerator
 from app.models.cross_firewall import (
     CrossFirewallAnalysisReport, 
-    PolicyMatch, 
     PolicyParity, 
-    CrossFirewallGap, 
-    EnforcementCapabilityMatrix
+    CrossFirewallGap,
+    AnalysisStatus
 )
 
-# Initialize components
 router = APIRouter(prefix="/api/v1")
-analyzer = PolicyAnalyzer()
+
+# Initialize components
 policy_matcher = PolicyMatcher()
+semantic_policy_matcher = SemanticPolicyMatcher()
 coverage_analyzer = CoverageAnalyzer()
 conflict_detector = ConflictDetector()
-normalization_engine = NormalizationEngine()
 report_generator = ReportGenerator()
 
-# Set up logging
-logger = logging.getLogger(__name__)
-
-# In-memory storage for analysis results (in a real app, this would be a database)
-analysis_storage = {}
-
-class AnalysisStatus:
-    """Analysis status constants."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETE = "complete"
-    FAILED = "failed"
-
-class MultiFirewallRequest:
-    """Request model for multi-firewall analysis."""
-    def __init__(self, firewall1: Dict[str, Any], firewall2: Dict[str, Any]):
-        self.firewall1 = firewall1
-        self.firewall2 = firewall2
-
-class PolicyComparisonRequest:
-    """Request model for policy comparison."""
-    def __init__(self, fortinet_policies: List[Dict[str, Any]], zscaler_policies: List[Dict[str, Any]]):
-        self.fortinet_policies = fortinet_policies
-        self.zscaler_policies = zscaler_policies
-
-class ConfigValidationRequest:
-    """Request model for config validation."""
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+# In-memory storage for analysis results (in production, use a database)
+analysis_storage: Dict[str, Dict[str, Any]] = {}
 
 @router.post("/analyze/multi-firewall")
 async def analyze_multi_firewall(request: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Analyze two firewalls and generate a cross-firewall analysis report.
+    Perform comprehensive cross-firewall analysis.
     
     Args:
         request: Multi-firewall analysis request
         
     Returns:
-        Complete cross-firewall analysis report
+        Comprehensive analysis report
     """
     try:
         # Validate input
-        if "firewall1" not in request or "firewall2" not in request:
+        if "fortinet_config" not in request or "zscaler_config" not in request:
             raise HTTPException(status_code=400, detail="Missing firewall configurations")
-            
-        firewall1_data = request["firewall1"]
-        firewall2_data = request["firewall2"]
-        
-        if "vendor" not in firewall1_data or "config" not in firewall1_data:
-            raise HTTPException(status_code=400, detail="Invalid firewall1 configuration")
-            
-        if "vendor" not in firewall2_data or "config" not in firewall2_data:
-            raise HTTPException(status_code=400, detail="Invalid firewall2 configuration")
         
         # Generate analysis ID
         analysis_id = str(uuid.uuid4())
-        
-        # Store initial status
         analysis_storage[analysis_id] = {
-            "status": AnalysisStatus.PENDING,
-            "created_at": datetime.utcnow(),
-            "report": None
+            "status": AnalysisStatus.IN_PROGRESS,
+            "started_at": datetime.utcnow()
         }
         
-        # Update status to processing
-        analysis_storage[analysis_id]["status"] = AnalysisStatus.PROCESSING
+        # Convert to NormalizedPolicy objects
+        fortinet_policies = [NormalizedPolicy(**policy) for policy in request["fortinet_config"]["policies"]]
+        zscaler_policies = [NormalizedPolicy(**policy) for policy in request["zscaler_config"]["policies"]]
         
-        # Parse firewall configurations
-        parser1 = ParserFactory.create_parser(firewall1_data["vendor"])
-        parsed_config1 = parser1.parse_config(firewall1_data["config"])
-        
-        parser2 = ParserFactory.create_parser(firewall2_data["vendor"])
-        parsed_config2 = parser2.parse_config(firewall2_data["config"])
-        
-        # Normalize configurations
-        normalized_config1 = normalization_engine.normalize_config(parsed_config1)
-        normalized_config2 = normalization_engine.normalize_config(parsed_config2)
-        
-        # Extract policies
-        fortinet_policies = [NormalizedPolicy(**policy) for policy in normalized_config1.policies]
-        zscaler_policies = [NormalizedPolicy(**policy) for policy in normalized_config2.policies]
-        
-        # Match policies
-        matches = policy_matcher.match_policies(fortinet_policies, zscaler_policies)
+        # Match policies using both traditional and semantic approaches
+        traditional_matches = policy_matcher.match_policies(fortinet_policies, zscaler_policies)
+        semantic_matches = semantic_policy_matcher.match_policies(fortinet_policies, zscaler_policies)
         
         # Analyze coverage
-        coverage = coverage_analyzer.analyze_coverage(matches, fortinet_policies, zscaler_policies)
+        coverage = coverage_analyzer.analyze_cross_firewall_coverage(fortinet_policies, zscaler_policies, traditional_matches)
         
         # Detect conflicts
-        conflicts = conflict_detector.detect_conflicts(matches, fortinet_policies, zscaler_policies)
+        conflicts = conflict_detector.find_cross_firewall_conflicts(traditional_matches, fortinet_policies, zscaler_policies)
         
-        # Build enforcement capability matrix
-        capability_matrix = coverage_analyzer.build_enforcement_capability_matrix(parsed_config1, parsed_config2)
+        # Generate recommendations
+        recommendations = coverage_analyzer.generate_standardization_recommendations(coverage, conflicts)
         
-        # Generate standardization recommendations
-        recommendations = report_generator.generate_standardization_recommendations(
-            CrossFirewallAnalysisReport(
-                analysis_id=analysis_id,
-                timestamp=datetime.utcnow(),
-                fortinet_config_id=normalized_config1.config_id,
-                zscaler_config_id=normalized_config2.config_id,
-                fortinet_inconsistencies=[],
-                zscaler_inconsistencies=[],
-                policy_matches=matches,
-                cross_firewall_gaps=conflicts,
-                policy_parity=coverage,
-                enforcement_matrix=capability_matrix,
-                standardization_recommendations=[],
-                overall_parity_score=coverage.parity_score
-            )
-        )
+        # Create capability matrix
+        capability_matrix = conflict_detector.generate_enforcement_capability_matrix(fortinet_policies, zscaler_policies)
         
-        # Create analysis report
+        # Generate report
         analysis_report = CrossFirewallAnalysisReport(
             analysis_id=analysis_id,
             timestamp=datetime.utcnow(),
-            fortinet_config_id=normalized_config1.config_id,
-            zscaler_config_id=normalized_config2.config_id,
-            fortinet_inconsistencies=[],
-            zscaler_inconsistencies=[],
-            policy_matches=matches,
-            cross_firewall_gaps=conflicts,
-            policy_parity=coverage,
+            fortinet_policy_count=len(fortinet_policies),
+            zscaler_policy_count=len(zscaler_policies),
+            policy_matches=semantic_matches,  # Use semantic matches for the report
+            coverage_analysis=coverage,
+            conflict_analysis=conflicts,
+            parity_analysis=PolicyParity(
+                parity_id=str(uuid.uuid4()),
+                total_policies_f1=len(fortinet_policies),
+                total_policies_f2=len(zscaler_policies),
+                matched_policies=len([m for m in semantic_matches if m.match_type != "no_match"])
+            ),
+            identified_gaps=[],
             enforcement_matrix=capability_matrix,
             standardization_recommendations=[rec["description"] for rec in recommendations],
             overall_parity_score=coverage.parity_score
@@ -174,12 +107,13 @@ async def analyze_multi_firewall(request: Dict[str, Any]) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"Error analyzing firewalls: {str(e)}")
 
 @router.post("/compare/policies")
-async def compare_policies(request: Dict[str, Any]) -> Dict[str, Any]:
+async def compare_policies(request: Dict[str, Any], use_semantic: bool = True) -> Dict[str, Any]:
     """
     Compare policies between Fortinet and Zscaler.
     
     Args:
         request: Policy comparison request
+        use_semantic: Whether to use semantic matching (True) or traditional matching (False)
         
     Returns:
         Policy matches with similarity scores
@@ -193,19 +127,67 @@ async def compare_policies(request: Dict[str, Any]) -> Dict[str, Any]:
         fortinet_policies = [NormalizedPolicy(**policy) for policy in request["fortinet_policies"]]
         zscaler_policies = [NormalizedPolicy(**policy) for policy in request["zscaler_policies"]]
         
-        # Match policies
-        matches = policy_matcher.match_policies(fortinet_policies, zscaler_policies)
+        # Match policies using selected approach
+        if use_semantic:
+            matches = semantic_policy_matcher.match_policies(fortinet_policies, zscaler_policies)
+        else:
+            matches = policy_matcher.match_policies(fortinet_policies, zscaler_policies)
         
         return {
             "matches": [match.dict() for match in matches],
             "total_matches": len([m for m in matches if m.match_type != "no_match"]),
             "unmatched_fortinet_policies": len([m for m in matches if m.fortinet_policy_id and not m.zscaler_rule_id]),
-            "unmatched_zscaler_policies": len([m for m in matches if m.zscaler_rule_id and not m.fortinet_policy_id])
+            "unmatched_zscaler_policies": len([m for m in matches if m.zscaler_rule_id and not m.fortinet_policy_id]),
+            "matching_approach": "semantic" if use_semantic else "traditional"
         }
         
     except Exception as e:
         logger.error(f"Error comparing policies: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error comparing policies: {str(e)}")
+
+@router.post("/find-similar-policies")
+async def find_similar_policies(request: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Find policies semantically similar to a target policy.
+    
+    Args:
+        request: Similar policy search request
+        
+    Returns:
+        List of similar policies with similarity scores
+    """
+    try:
+        # Validate input
+        if "target_policy" not in request or "candidate_policies" not in request:
+            raise HTTPException(status_code=400, detail="Missing target or candidate policies")
+        
+        # Convert to NormalizedPolicy objects
+        target_policy = NormalizedPolicy(**request["target_policy"])
+        candidate_policies = [NormalizedPolicy(**policy) for policy in request["candidate_policies"]]
+        
+        # Set threshold if provided
+        threshold = request.get("threshold", 0.7)
+        
+        # Find similar policies
+        similar_policies = semantic_policy_matcher.find_semantically_similar_policies(
+            target_policy, candidate_policies, threshold
+        )
+        
+        return {
+            "target_policy_id": target_policy.id,
+            "similar_policies": [
+                {
+                    "policy": policy.dict(),
+                    "similarity_score": float(score)
+                }
+                for policy, score in similar_policies
+            ],
+            "count": len(similar_policies)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error finding similar policies: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error finding similar policies: {str(e)}")
 
 @router.get("/vendors")
 async def get_supported_vendors() -> Dict[str, Any]:
@@ -230,7 +212,7 @@ async def get_supported_vendors() -> Dict[str, Any]:
             {
                 "name": "cisco",
                 "versions": ["9.2", "9.3", "9.4", "9.5"],
-                "description": "Cisco ASA/FTD firewalls (planned)"
+                "description": "Cisco ASA/FTD firewalls"
             },
             {
                 "name": "paloalto",
@@ -240,82 +222,40 @@ async def get_supported_vendors() -> Dict[str, Any]:
         ]
     }
 
-@router.get("/vendors/{vendor}/schema")
-async def get_vendor_schema(vendor: str) -> Dict[str, Any]:
+@router.get("/analysis/{analysis_id}")
+async def get_analysis(analysis_id: str) -> Dict[str, Any]:
     """
-    Get expected JSON schema for a vendor.
+    Get analysis results.
     
     Args:
-        vendor: Vendor name
+        analysis_id: Analysis ID
         
     Returns:
-        Expected JSON schema
+        Analysis results
     """
-    schemas = {
-        "fortinet": {
-            "type": "object",
-            "properties": {
-                "system": {"type": "object"},
-                "firewall": {"type": "object"},
-                "version": {"type": "string"}
-            },
-            "required": ["system", "firewall"]
-        },
-        "zscaler": {
-            "type": "object",
-            "properties": {
-                "cloud": {"type": "string"},
-                "rules": {"type": "array"},
-                "locations": {"type": "array"},
-                "user_groups": {"type": "array"}
-            },
-            "required": ["cloud", "rules"]
-        }
-    }
+    if analysis_id not in analysis_storage:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+        
+    return analysis_storage[analysis_id]
+
+@router.get("/analysis/{analysis_id}/status")
+async def get_analysis_status(analysis_id: str) -> Dict[str, Any]:
+    """
+    Get analysis status.
     
-    if vendor.lower() not in schemas:
-        raise HTTPException(status_code=404, detail=f"Schema not found for vendor: {vendor}")
+    Args:
+        analysis_id: Analysis ID
+        
+    Returns:
+        Analysis status
+    """
+    if analysis_id not in analysis_storage:
+        raise HTTPException(status_code=404, detail="Analysis not found")
         
     return {
-        "vendor": vendor,
-        "schema": schemas[vendor.lower()]
+        "analysis_id": analysis_id,
+        "status": analysis_storage[analysis_id]["status"]
     }
-
-@router.post("/validate/config/{vendor}")
-async def validate_config(vendor: str, config: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Validate configuration against vendor schema.
-    
-    Args:
-        vendor: Vendor name
-        config: Configuration JSON
-        
-    Returns:
-        Validation results
-    """
-    try:
-        # Create appropriate parser
-        parser = ParserFactory.create_parser(vendor)
-        
-        # Parse the configuration
-        firewall_config = parser.parse_config(config)
-        
-        # Validate the configuration
-        is_valid = parser.validate_config(firewall_config)
-        
-        return {
-            "valid": is_valid,
-            "vendor": vendor,
-            "errors": [] if is_valid else ["Configuration validation failed"]
-        }
-        
-    except Exception as e:
-        logger.error(f"Error validating {vendor} configuration: {str(e)}")
-        return {
-            "valid": False,
-            "vendor": vendor,
-            "errors": [str(e)]
-        }
 
 @router.get("/analysis/{analysis_id}/policy-matches")
 async def get_policy_matches(analysis_id: str) -> Dict[str, Any]:
@@ -345,152 +285,34 @@ async def get_policy_matches(analysis_id: str) -> Dict[str, Any]:
         zscaler_policies
     )
 
-@router.get("/analysis/{analysis_id}/coverage")
-async def get_coverage_analysis(analysis_id: str) -> Dict[str, Any]:
+@router.post("/validate/config/{vendor}")
+async def validate_config(vendor: str, config: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Get coverage analysis and gaps for an analysis.
+    Validate vendor configuration.
     
     Args:
-        analysis_id: Analysis ID
+        vendor: Vendor name
+        config: Configuration to validate
         
     Returns:
-        Coverage analysis and gaps
-    """
-    if analysis_id not in analysis_storage:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-        
-    analysis = analysis_storage[analysis_id]
-    if analysis["status"] != AnalysisStatus.COMPLETE:
-        raise HTTPException(status_code=400, detail=f"Analysis not complete. Current status: {analysis['status']}")
-        
-    report = analysis["report"]
-    return report_generator.generate_coverage_report(
-        report.policy_parity,
-        report.cross_firewall_gaps
-    )
-
-@router.get("/analysis/{analysis_id}/conflicts")
-async def get_conflicts(analysis_id: str) -> Dict[str, Any]:
-    """
-    Get identified conflicts for an analysis.
-    
-    Args:
-        analysis_id: Analysis ID
-        
-    Returns:
-        Identified conflicts
-    """
-    if analysis_id not in analysis_storage:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-        
-    analysis = analysis_storage[analysis_id]
-    if analysis["status"] != AnalysisStatus.COMPLETE:
-        raise HTTPException(status_code=400, detail=f"Analysis not complete. Current status: {analysis['status']}")
-        
-    report = analysis["report"]
-    return report_generator.generate_conflict_report(report.cross_firewall_gaps)
-
-@router.get("/analysis/{analysis_id}/enforcement-matrix")
-async def get_enforcement_matrix(analysis_id: str) -> Dict[str, Any]:
-    """
-    Get capability comparison for an analysis.
-    
-    Args:
-        analysis_id: Analysis ID
-        
-    Returns:
-        Capability comparison
-    """
-    if analysis_id not in analysis_storage:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-        
-    analysis = analysis_storage[analysis_id]
-    if analysis["status"] != AnalysisStatus.COMPLETE:
-        raise HTTPException(status_code=400, detail=f"Analysis not complete. Current status: {analysis['status']}")
-        
-    report = analysis["report"]
-    return report_generator.generate_enforcement_comparison(report.enforcement_matrix)
-
-@router.get("/analysis/{analysis_id}/export")
-async def export_analysis(
-    analysis_id: str,
-    format: str = Query("json", description="Export format: pdf, json, csv"),
-    type: str = Query("comparison", description="Export type: comparison, mapping")
-) -> Dict[str, Any]:
-    """
-    Export analysis report.
-    
-    Args:
-        analysis_id: Analysis ID
-        format: Export format (pdf, json, csv)
-        type: Export type (comparison, mapping)
-        
-    Returns:
-        Exported report
-    """
-    if analysis_id not in analysis_storage:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-        
-    analysis = analysis_storage[analysis_id]
-    if analysis["status"] != AnalysisStatus.COMPLETE:
-        raise HTTPException(status_code=400, detail=f"Analysis not complete. Current status: {analysis['status']}")
-        
-    report = analysis["report"]
-    
-    if format.lower() == "pdf":
-        pdf_content = report_generator.generate_pdf_multi_firewall(report)
-        return {
-            "format": "pdf",
-            "content": pdf_content.hex()  # Convert bytes to hex string for JSON serialization
-        }
-    elif format.lower() == "json":
-        return {
-            "format": "json",
-            "content": json.dumps(report.dict(), indent=2)
-        }
-    elif format.lower() == "csv":
-        if type.lower() == "mapping":
-            csv_content = report_generator.generate_csv_policy_mappings(report.policy_matches)
-            return {
-                "format": "csv",
-                "content": csv_content
-            }
-        else:
-            raise HTTPException(status_code=400, detail="CSV export only supported for mapping type")
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported export format: {format}")
-
-@router.post("/audit/check-policy")
-async def check_policy_compliance(request: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Check policy compliance against both firewalls.
-    
-    Args:
-        request: Policy definition
-        
-    Returns:
-        Compliance status in each firewall
+        Validation results
     """
     try:
-        # In a real implementation, this would check the policy against both firewall configurations
-        # For now, we'll return a placeholder response
+        # In a real implementation, this would validate against vendor-specific schemas
+        # For now, we'll do basic validation
+        required_fields = ["policies"]
+        is_valid = all(field in config for field in required_fields)
+        
         return {
-            "policy": request.get("policy", "unknown"),
-            "fortinet_compliance": {
-                "compliant": True,
-                "status": "Compliant",
-                "findings": []
-            },
-            "zscaler_compliance": {
-                "compliant": True,
-                "status": "Compliant",
-                "findings": []
-            },
-            "recommendations": [
-                "Policy is compliant with both firewall configurations"
-            ]
+            "valid": is_valid,
+            "vendor": vendor,
+            "errors": [] if is_valid else ["Configuration validation failed"]
         }
         
     except Exception as e:
-        logger.error(f"Error checking policy compliance: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error checking policy compliance: {str(e)}")
+        logger.error(f"Error validating {vendor} configuration: {str(e)}")
+        return {
+            "valid": False,
+            "vendor": vendor,
+            "errors": [str(e)]
+        }

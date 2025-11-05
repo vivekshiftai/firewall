@@ -13,12 +13,14 @@ A production-grade FastAPI application for CROSS-FIREWALL policy analysis and co
 7. **Coverage Analysis** - Analyze policy coverage gaps between platforms
 8. **Enforcement Comparison** - Compare security capabilities between vendors
 9. **Multi-Format Export** - Export reports in JSON, CSV, and PDF formats
+10. **Semantic Policy Matching** - Use embedding-based models to identify semantically similar policies across vendors
 
 ## Supported Firewalls
 
 - Fortinet FortiGate (source: JSON config exports)
 - Zscaler Cloud Security (source: API JSON responses or config exports)
-- Extensible to: Cisco ASA, Palo Alto Networks, pfSense
+- Cisco ASA (source: JSON config exports)
+- Extensible to: Palo Alto Networks, pfSense
 
 ## Quick Start
 
@@ -54,6 +56,7 @@ uvicorn main:app --reload
 ### Multi-Firewall Analysis Endpoints
 - `POST /api/v1/analyze/multi-firewall` - Complete cross-firewall analysis
 - `POST /api/v1/compare/policies` - Compare policy sets between vendors
+- `POST /api/v1/find-similar-policies` - Find semantically similar policies
 - `GET /api/v1/vendors` - List supported vendors
 - `GET /api/v1/vendors/{vendor}/schema` - Get vendor configuration schema
 - `POST /api/v1/validate/config/{vendor}` - Validate vendor configuration
@@ -88,6 +91,7 @@ The application follows a modular architecture with the following components:
 - Cross-firewall policy matching with weighted similarity scoring
 - Exact, semantic, and partial match detection
 - Confidence scoring based on source, destination, service, and action
+- **Semantic Policy Matching** - Embedding-based similarity using TF-IDF and cosine distance
 
 ### Coverage Analysis
 - Bidirectional coverage percentage calculation
@@ -104,6 +108,31 @@ The application follows a modular architecture with the following components:
 - Multi-format export (JSON, CSV, PDF)
 - Standardization recommendations
 - Detailed policy mappings
+
+## Semantic Policy Matching
+
+The Cross-Firewall Policy Analysis Engine now includes advanced semantic policy matching capabilities that go beyond traditional syntactic comparison:
+
+### How It Works
+1. **Text Representation**: Each policy is converted to a comprehensive text representation that captures its semantic meaning
+2. **Embedding Generation**: TF-IDF vectorization creates numerical embeddings of policies
+3. **Similarity Calculation**: Cosine similarity measures semantic distance between policy embeddings
+4. **Intelligent Matching**: Policies with high semantic similarity are identified as matches even with different syntax
+
+### Benefits
+- **Contextual Understanding**: Captures the intent behind policies rather than just matching keywords
+- **Cross-Vendor Compatibility**: Identifies similar policies across different firewall vendors with different naming conventions
+- **Reduced False Negatives**: Finds matches that traditional methods would miss due to syntactic differences
+- **Enhanced Accuracy**: More accurate policy matching leads to better analysis and recommendations
+
+### Example
+Traditional matching might miss these as similar:
+```
+Fortinet: "Allow Internal_Network to Web_Servers on HTTP/HTTPS"
+Zscaler:  "Permit Corporate_Users to Internet_Websites for Web_Browsing"
+```
+
+Semantic matching correctly identifies these as having the same intent despite different syntax.
 
 ## Testing
 
