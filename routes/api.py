@@ -3,6 +3,7 @@ Main API routes for cross-firewall policy analysis.
 """
 import logging
 import os
+import re
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from typing import Dict, Any
 import json
@@ -12,6 +13,80 @@ from analyzers.policy_analyzer import PolicyAnalyzer
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+def _fix_json_syntax(json_str: str) -> str:
+    """
+    Fix common JSON syntax errors.
+    
+    Args:
+        json_str: JSON string to fix
+        
+    Returns:
+        Fixed JSON string
+    """
+    # Fix missing commas between objects: } { -> }, {
+    json_str = re.sub(r'}\s*{', '}, {', json_str)
+    
+    # Fix missing commas before closing brackets: } ] -> }, ]
+    json_str = re.sub(r'}\s*\]', '}]', json_str)
+    
+    # Fix missing commas after values before next object: "value" { -> "value", {
+    json_str = re.sub(r'"\s*{', '", {', json_str)
+    
+    # Fix trailing commas before closing brackets/braces
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    
+    return json_str
+
+
+def _aggressive_json_fix(json_str: str) -> str:
+    """
+    Aggressively fix JSON syntax errors.
+    
+    Args:
+        json_str: JSON string to fix
+        
+    Returns:
+        Fixed JSON string
+    """
+    # First, try to extract array from object
+    if json_str.strip().startswith('{') and '[' in json_str:
+        first_bracket = json_str.find('[')
+        last_bracket = json_str.rfind(']')
+        if first_bracket != -1 and last_bracket != -1:
+            json_str = json_str[first_bracket:last_bracket + 1]
+    
+    # Fix missing commas between objects (more aggressive)
+    # Pattern: } followed by whitespace and { -> }, {
+    json_str = re.sub(r'}\s*\n\s*{', '},\n{', json_str)
+    json_str = re.sub(r'}\s*{', '}, {', json_str)
+    
+    # Fix missing commas after strings before objects
+    json_str = re.sub(r'"\s*\n\s*{', '",\n{', json_str)
+    json_str = re.sub(r'"\s*{', '", {', json_str)
+    
+    # Fix missing commas after numbers before objects
+    json_str = re.sub(r'(\d)\s*{', r'\1, {', json_str)
+    
+    # Fix missing commas after booleans before objects
+    json_str = re.sub(r'(true|false)\s*{', r'\1, {', json_str)
+    
+    # Fix missing commas after null before objects
+    json_str = re.sub(r'null\s*{', 'null, {', json_str)
+    
+    # Fix missing commas after closing braces before objects
+    json_str = re.sub(r'}\s*\n\s*{', '},\n{', json_str)
+    
+    # Remove trailing commas
+    json_str = re.sub(r',\s*}', '}', json_str)
+    json_str = re.sub(r',\s*]', ']', json_str)
+    
+    # Fix missing commas after closing braces (before next object in array)
+    json_str = re.sub(r'}\s*\n\s*{', '},\n{', json_str)
+    
+    return json_str
 
 router = APIRouter(prefix="/api/v1")
 
@@ -87,110 +162,67 @@ async def analyze_firewall(vendor: str = Form(...), config_file: UploadFile = Fi
         logger.debug(f"Reading uploaded file: {config_file.filename}")
         contents = await config_file.read()
         
-        # Parse JSON content - handle any format
+        # Parse JSON content - handle standard JSON formats
         logger.debug("Parsing JSON content")
         contents_str = contents.decode('utf-8') if isinstance(contents, bytes) else contents
         
-        # Try multiple JSON parsing strategies
-        config_data = None
-        parse_errors = []
-        
-        # Strategy 1: Try direct JSON parsing
+        # Parse JSON - expects standard valid JSON format
         try:
             config_data = json.loads(contents_str)
-            logger.debug("Direct JSON parsing successful")
+            logger.debug("JSON parsing successful")
         except json.JSONDecodeError as e:
-            parse_errors.append(f"Direct parse: {str(e)}")
-            logger.debug(f"Direct JSON parsing failed: {str(e)}")
+            logger.error(f"Invalid JSON format: {str(e)}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid JSON format. Please ensure your JSON is valid. Error: {str(e)}"
+            )
         
-        # Strategy 2: Fix invalid JSON structure (e.g., { [{...}] } -> [{...}])
-        if config_data is None:
-            try:
-                fixed_str = contents_str
-                # Fix: { [{ ... }] } -> [{ ... }]
-                if fixed_str.strip().startswith('{') and '[' in fixed_str:
-                    first_bracket = fixed_str.find('[')
-                    last_bracket = fixed_str.rfind(']')
-                    if first_bracket != -1 and last_bracket != -1:
-                        fixed_str = fixed_str[first_bracket:last_bracket + 1]
-                        logger.info("Fixed JSON: extracted array from object")
-                # Fix: { { ... }, { ... } } -> [{ ... }, { ... }]
-                elif fixed_str.strip().startswith('{') and fixed_str.count('{') > 1:
-                    # Remove outer braces
-                    fixed_str = fixed_str.strip().lstrip('{').rstrip('}')
-                    # Wrap in array brackets
-                    fixed_str = '[' + fixed_str + ']'
-                    logger.info("Fixed JSON: wrapped object collection in array")
-                
-                config_data = json.loads(fixed_str)
-                logger.debug("Fixed JSON parsing successful")
-            except (json.JSONDecodeError, ValueError) as e:
-                parse_errors.append(f"Fixed parse: {str(e)}")
-                logger.debug(f"Fixed JSON parsing failed: {str(e)}")
+        # Handle different JSON structures (standard formats)
+        # Format 1: Direct array of policies: [{...}, {...}]
+        if isinstance(config_data, list):
+            logger.info("Received JSON array format")
+            # Already in correct format
         
-        # Strategy 3: Try to extract array from nested structure
-        if config_data is None:
-            try:
-                temp_data = json.loads(contents_str)
-                # If it's a dict, try to find arrays in it
-                if isinstance(temp_data, dict):
-                    # Look for common keys that might contain arrays
-                    for key in ['policies', 'rules', 'config', 'data', 'items', 'objects']:
-                        if key in temp_data and isinstance(temp_data[key], list):
-                            config_data = temp_data[key]
-                            logger.info(f"Extracted array from dict key: {key}")
+        # Format 2: Object with 'policies' key: {"policies": [{...}, {...}]} or {"device": {...}, "policies": [...]}
+        elif isinstance(config_data, dict):
+            # Check for common keys that contain arrays
+            for key in ['policies', 'rules', 'config', 'data', 'items', 'objects', 'firewall_policies']:
+                if key in config_data and isinstance(config_data[key], list):
+                    logger.info(f"Extracted array from object key: '{key}'")
+                    config_data = config_data[key]
+                    break
+            else:
+                # If no array found in common keys, check single key
+                if len(config_data) == 1:
+                    for key, value in config_data.items():
+                        if isinstance(value, list):
+                            logger.info(f"Extracted array from single-key object: '{key}'")
+                            config_data = value
                             break
-                    # If no common key found, check if any value is a list
-                    if config_data is None:
-                        for key, value in temp_data.items():
-                            if isinstance(value, list):
-                                config_data = value
-                                logger.info(f"Extracted list from dict key: {key}")
-                                break
-                    # If still None, check nested structures
-                    if config_data is None:
-                        for key, value in temp_data.items():
-                            if isinstance(value, dict):
-                                for nested_key, nested_value in value.items():
-                                    if isinstance(nested_value, list):
-                                        config_data = nested_value
-                                        logger.info(f"Extracted list from nested dict: {key}.{nested_key}")
-                                        break
-                                if config_data:
+                        elif isinstance(value, dict):
+                            # Check nested structure (e.g., {"device": {...}, "policies": [...]})
+                            for nested_key in ['policies', 'rules', 'config', 'data']:
+                                if nested_key in value and isinstance(value[nested_key], list):
+                                    logger.info(f"Extracted array from nested object: '{key}.{nested_key}'")
+                                    config_data = value[nested_key]
                                     break
-                # If it's already a list, use it
-                elif isinstance(temp_data, list):
-                    config_data = temp_data
-                    logger.debug("Data is already a list")
-            except (json.JSONDecodeError, ValueError) as e:
-                parse_errors.append(f"Nested extraction: {str(e)}")
-                logger.debug(f"Nested extraction failed: {str(e)}")
+                            if isinstance(config_data, list):
+                                break
+                
+                # If still a dict, check if all values are objects (convert to list)
+                if isinstance(config_data, dict):
+                    if all(isinstance(v, dict) for v in config_data.values()):
+                        config_data = list(config_data.values())
+                        logger.info("Converted dict of objects to list")
+                    else:
+                        # Single object, wrap in array
+                        config_data = [config_data]
+                        logger.info("Wrapped single object in array")
         
-        # If all strategies failed, raise error with details
-        if config_data is None:
-            error_msg = "Failed to parse JSON. Attempted strategies:\n" + "\n".join(parse_errors)
-            logger.error(error_msg)
-            raise HTTPException(status_code=400, detail=f"Invalid JSON format. {error_msg}")
-        
-        # Final normalization: ensure we have a list
-        if isinstance(config_data, dict):
-            # If single key with list value, extract it
-            if len(config_data) == 1:
-                for key, value in config_data.items():
-                    if isinstance(value, list):
-                        logger.info(f"Extracting list from single-key dict: {key}")
-                        config_data = value
-                        break
-            # If dict contains multiple keys, convert to list
-            if isinstance(config_data, dict):
-                # Check if all values are dictionaries (objects)
-                if all(isinstance(v, dict) for v in config_data.values()):
-                    config_data = list(config_data.values())
-                    logger.info("Converted dict of objects to list")
-                # Or wrap the dict itself in a list
-                elif not isinstance(config_data, list):
-                    config_data = [config_data]
-                    logger.info("Wrapped single dict in list")
+        # Ensure we have a list at the end
+        if not isinstance(config_data, list):
+            config_data = [config_data]
+            logger.info("Wrapped data in array")
         
         logger.info(f"Successfully parsed JSON content with {len(config_data) if isinstance(config_data, list) else 'N/A'} items")
         
