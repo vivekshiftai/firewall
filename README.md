@@ -30,7 +30,7 @@ A production-grade FastAPI application for CROSS-FIREWALL policy analysis and co
 # Build and run the application
 docker-compose up --build
 
-# The API will be available at http://localhost:5000
+# The API will be available at http://localhost:6000
 ```
 
 ### Using Python
@@ -39,8 +39,8 @@ docker-compose up --build
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the application
-uvicorn main:app --reload
+# Run the application (specify a port that's not in use)
+uvicorn main:app --reload --port 8080
 ```
 
 ## API Endpoints
