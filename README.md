@@ -30,7 +30,7 @@ A production-grade FastAPI application for CROSS-FIREWALL policy analysis and co
 # Build and run the application
 docker-compose up --build
 
-# The API will be available at http://localhost:8000
+# The API will be available at http://localhost:4000
 ```
 
 ### Using Python
